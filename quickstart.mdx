@@ -1,80 +1,209 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Execute your first program on Neodymium VM
 ---
 
-## Get started in three steps
+Get up and running with Neodymium VM in minutes by executing your first binary program.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, make sure you have [installed Neodymium VM](/installation).
+
+## Your First Program
+
+Let's create and run a simple program that performs basic arithmetic.
+
+<Steps>
+  <Step title="Create a binary program">
+    Create a file called `hello.bin` with the following bytecode that adds two numbers:
+
+    ```
+    02 00 0A     ; MOV $a, #10  - Load 10 into register $a
+    02 01 14     ; MOV $b, #20  - Load 20 into register $b
+    41 00 01     ; ADD $a, $b   - Add $b to $a (result: 30)
+    FD 00        ; HALT $a      - Exit with value in $a
+    ```
+
+    **What this does:**
+    - Loads the value 10 into register `$a`
+    - Loads the value 20 into register `$b`
+    - Adds `$b` to `$a`, storing result (30) in `$a`
+    - Halts execution and returns the value in `$a` as the exit code
+
+    <Note>
+      Each line contains the opcode bytes in hexadecimal. Refer to the [Opcode Reference](/reference/opcodes) for the complete instruction set.
+    </Note>
+  </Step>
+
+  <Step title="Run the program">
+    Execute your program using the `neodymium` binary:
+
+    ```bash
+    neodymium hello.bin
+    ```
+
+    The program will execute and exit with code 30 (the result of 10 + 20).
+  </Step>
+
+  <Step title="Check the exit code">
+    Verify the result on UNIX systems:
+
+    ```bash
+    echo $?
+    ```
+
+    You should see `30` printed to the console.
+  </Step>
+</Steps>
+
+## Understanding Execution
+
+When you run a Neodymium program:
+
+1. **Load**: The binary file is loaded into RAM starting at address `0x0000`
+2. **Initialize**: The CPU, stack, and screen are initialized
+3. **Execute**: The CPU executes instructions sequentially
+4. **Display**: The screen updates after each instruction
+5. **Halt**: Execution stops when a `HALT` instruction is encountered
+
+<Info>
+  The maximum file size is **64KB** (0x10000 bytes), matching the VM's total addressable RAM.
+</Info>
+
+## Program Structure
+
+A typical Neodymium program consists of:
+
+```
+┌─────────────────────┐
+│ Program Code        │  Opcodes and operands
+├─────────────────────┤
+│ Data Section        │  Constants and variables (optional)
+├─────────────────────┤
+│ Stack (0xCF00)      │  256 bytes for function calls
+├─────────────────────┤
+│ Screen (0xA000)     │  768 bytes for 16×16 RGB display
+└─────────────────────┘
+```
+
+## Binary Format
+
+Neodymium executes raw binary files where each byte represents either:
+- An **opcode** (instruction)
+- An **operand** (register address or immediate value)
+
+### Example: MOV Instruction
+
+The instruction `MOV $a, #10` is encoded as:
+
+| Byte | Hex  | Meaning |
+|------|------|---------|
+| 1    | `02` | MOV opcode (register, immediate) |
+| 2    | `00` | Destination register ($a) |
+| 3    | `0A` | Immediate value (10 in decimal) |
+
+## More Examples
+
+### Using the Stack
+
+Push values onto the stack and pop them back:
+
+```
+31 2A        ; PUSH #42     - Push 42 onto stack
+31 64        ; PUSH #100    - Push 100 onto stack
+32 00        ; POP $a       - Pop 100 into $a
+32 01        ; POP $b       - Pop 42 into $b
+FF           ; HALT         - Exit
+```
+
+### Conditional Branching
+
+Use flags and jumps for control flow:
+
+```
+02 00 0A     ; MOV $a, #10
+02 01 14     ; MOV $b, #20
+23 00 01     ; CMP $a, $b   - Compare $a and $b
+26 00 10     ; JNZ [0x0010] - Jump to 0x0010 if not zero
+FF           ; HALT         - (skipped if jump taken)
+```
+
+### Drawing to Screen
+
+Write pixel data to the display at address `0xA000`:
+
+```
+02 00 FF     ; MOV $a, #255
+63 A0 00 00  ; STORE [0xA000], #255  - Red channel = 255
+63 A0 01 00  ; STORE [0xA001], #0    - Green channel = 0
+63 A0 02 00  ; STORE [0xA002], #0    - Blue channel = 0
+FF           ; HALT
+```
+
+This sets the first pixel (0,0) to red.
+
+## Common Operations Reference
+
+Here are some frequently used instructions:
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+  <Accordion title="Data Movement">
+    - `MOV $x, $y` (0x01) - Copy register to register
+    - `MOV $x, #n` (0x02) - Load immediate value
+    - `MOV $x, [addr]` (0x03) - Load from memory
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+
+  <Accordion title="Arithmetic">
+    - `ADD $x, #n` (0x40) - Add immediate to register
+    - `SUB $x, #n` (0x43) - Subtract immediate from register
+    - `MUL $x, #n` (0x46) - Multiply register by immediate
+    - `DIV $x, #n` (0x48) - Divide register by immediate
+  </Accordion>
+
+  <Accordion title="Stack">
+    - `PUSH $x` (0x30) - Push register onto stack
+    - `PUSH #n` (0x31) - Push immediate onto stack
+    - `POP $x` (0x32) - Pop from stack into register
+  </Accordion>
+
+  <Accordion title="Control Flow">
+    - `JMP [addr]` (0x20) - Unconditional jump
+    - `JZ [addr]` (0x24) - Jump if zero flag set
+    - `JNZ [addr]` (0x26) - Jump if zero flag not set
+    - `CALL [addr]` (0x50) - Call subroutine
+    - `RET` (0x52) - Return from subroutine
+  </Accordion>
+
+  <Accordion title="System">
+    - `HALT` (0xFF) - Exit with code 0
+    - `HALT $x` (0xFD) - Exit with code in register
+    - `HALT #n` (0xFE) - Exit with immediate code
   </Accordion>
 </AccordionGroup>
 
-### Step 2: Deploy your changes
+## Debugging Tips
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+<Tip>
+  **File too large error?** Make sure your binary is under 64KB. The VM cannot load files larger than the total RAM size.
+</Tip>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+<Warning>
+  If your program doesn't halt (infinite loop), the display window will remain open. Close the window to terminate execution.
+</Warning>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Architecture Overview" icon="microchip" href="/architecture/overview">
+    Learn about CPU, RAM, stack, and screen architecture
+  </Card>
+  <Card title="Instruction Set" icon="book" href="/programming/instruction-set">
+    Explore the complete instruction set
+  </Card>
+  <Card title="Programming Examples" icon="code" href="/programming/examples">
+    See more complex program examples
+  </Card>
+  <Card title="Opcode Reference" icon="list" href="/reference/opcodes">
+    Complete opcode table with hex values
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

@@ -1,0 +1,247 @@
+---
+title: CPU Flags
+description: Understanding the Neodymium VM flag system
+---
+
+The Neodymium VM CPU maintains three flag registers that track the state of arithmetic and logic operations. These flags are used for conditional branching and flow control.
+
+## Overview
+
+The CPU has three boolean flags:
+
+<CardGroup cols={3}>
+  <Card title="Zero Flag" icon="0">
+    Set when a result equals zero
+  </Card>
+  <Card title="Overflow Flag" icon="arrow-up">
+    Set when a result exceeds 255
+  </Card>
+  <Card title="Underflow Flag" icon="arrow-down">
+    Set when a result is less than 0
+  </Card>
+</CardGroup>
+
+## Flag Definitions
+
+### Zero Flag
+
+```cpp
+bool zero; // Indicates if last value is equal to zero
+```
+
+**Set when:**
+- Any arithmetic result equals exactly 0
+- A comparison (CMP) results in equal values
+- Square root of a value is 0
+
+**Used by:**
+- `JZ` (Jump if Zero) - Jumps when flag is true
+- `JNZ` (Jump if Not Zero) - Jumps when flag is false
+
+**Example:**
+```asm
+CMP $a, $b    ; Compare $a and $b
+JZ equal      ; Jump to 'equal' if $a == $b
+```
+
+### Overflow Flag
+
+```cpp
+bool overflow; // Indicate if last value is over 255 and had to wrap around to 0
+```
+
+**Set when:**
+- Addition result > 255
+- Multiplication result > 255
+- Power operation would exceed byte range (uses logarithm check)
+- INC wraps from 255 to 0
+
+**Cleared when:**
+- Result is within valid byte range (0-255)
+- Square root operations (always clear overflow)
+
+**Used by:**
+- `JO` (Jump if Overflow) - Jumps when flag is true
+- `JNO` (Jump if Not Overflow) - Jumps when flag is false
+
+**Example:**
+```asm
+MOV $a, #200
+ADD $a, #100  ; Result: 44 (300 % 256), overflow flag SET
+JO overflow_handler
+```
+
+### Underflow Flag
+
+```cpp
+bool underflow; // Indicates if last value is under 0 and had to wrap around to 255
+```
+
+**Set when:**
+- Subtraction result < 0
+- DEC wraps from 0 to 255
+- Any arithmetic operation produces negative result
+
+**Cleared when:**
+- Result is non-negative
+- Power operations (always clear underflow)
+
+**Used by:**
+- `JU` (Jump if Underflow) - Jumps when flag is true
+- `JNU` (Jump if Not Underflow) - Jumps when flag is false
+
+**Example:**
+```asm
+MOV $a, #10
+SUB $a, #20   ; Result: 246 (wraps around), underflow flag SET
+JU underflow_handler
+```
+
+## Flag Update Mechanism
+
+Flags are updated by the `update_flags_with_number()` function:
+
+```cpp
+void CPU::update_flags_with_number(int64_t num)
+{
+    overflow    = num > 255;
+    zero        = num == 0;
+    underflow   = num < 0; 
+}
+```
+
+This function is called after most arithmetic operations, using a 64-bit signed integer to detect all three conditions before the result is truncated to 8 bits.
+
+## Instructions That Affect Flags
+
+<Tabs>
+  <Tab title="Always Update Flags">
+    These instructions always call `update_flags_with_number()`:
+
+    - **CMP** (0x22, 0x23) - Compare values
+    - **ADD** (0x40, 0x41) - Addition
+    - **SUB** (0x43, 0x44) - Subtraction
+    - **MUL** (0x46, 0x47) - Multiplication
+    - **DIV** (0x48, 0x49) - Division
+    - **MOD** (0x4e, 0x4f) - Modulo
+  </Tab>
+
+  <Tab title="Special Flag Updates">
+    These instructions have custom flag update logic:
+
+    **INC (0x42)**
+    - Only updates flags if result wraps to 0 (overflow case)
+    - Sets overflow flag when wrapping occurs
+
+    **DEC (0x45)**
+    - Only updates flags if result wraps to 255 (underflow case)
+    - Sets underflow flag when wrapping occurs
+
+    **PWR (0x4a, 0x4b)**
+    - Uses logarithm-based overflow detection
+    - Manually sets: `overflow = (pow_size > BYTE_LN)`
+    - Always clears underflow and zero flags
+    - Raises SIGABRT if base or exponent is 0
+
+    **SQRT (0x4c)**
+    - Clears overflow and underflow flags
+    - Sets zero flag only if result is 0
+
+    **FSQRT (0x4d)**
+    - Clears overflow and underflow flags
+    - Sets zero flag only if result is 0
+  </Tab>
+
+  <Tab title="Never Update Flags">
+    These instructions do NOT modify flags:
+
+    - **NOP** (0x00)
+    - **MOV** (0x01-0x04) - All move variants
+    - **NOT** (0x10)
+    - **AND** (0x11, 0x12)
+    - **JMP** (0x20, 0x21) - All jump variants
+    - **PUSH** (0x30, 0x31)
+    - **POP** (0x32)
+    - **CALL** (0x50, 0x51)
+    - **RET** (0x52)
+    - **STORE** (0x60-0x63) - All store variants
+    - **HALT** (0xfd-0xff)
+  </Tab>
+</Tabs>
+
+## Using Flags for Conditional Logic
+
+### Equality Checking
+
+```asm
+; Check if $a equals $b
+CMP $a, $b
+JZ equal_label    ; Jump if equal
+; Not equal code here
+
+equal_label:
+; Equal code here
+```
+
+### Range Checking
+
+```asm
+; Check if $a > $b (unsigned comparison)
+MOV $c, $a
+SUB $c, $b        ; $c = $a - $b
+JU less_or_equal  ; If underflow, $a <= $b
+; $a > $b code here
+
+less_or_equal:
+; $a <= $b code here
+```
+
+### Overflow Detection
+
+```asm
+; Safe addition with overflow check
+ADD $a, $b
+JO overflow_error
+; Normal execution
+
+overflow_error:
+; Handle overflow
+```
+
+### Loop Counting
+
+```asm
+MOV $a, #10       ; Counter
+
+loop_start:
+; Loop body here
+DEC $a
+JNZ loop_start    ; Continue while $a != 0
+; Loop finished
+```
+
+## Flag Persistence
+
+Flags maintain their state until updated by another instruction:
+
+```asm
+CMP $a, $b        ; Sets flags
+MOV $c, #5        ; Does NOT change flags
+JZ still_valid    ; Still uses flags from CMP
+```
+
+<Warning>
+Be careful when using conditional jumps after multiple operations. Only the most recent flag-modifying instruction affects the jump.
+</Warning>
+
+## Implementation Details
+
+From the source code (`cpu.h:16-18`):
+
+```cpp
+bool zero;      // Indicates if last value is equal to zero
+bool underflow; // Indicates if last value is under 0 and had to wrap around to 255
+bool overflow;  // Indicate if last value is over 255 and had to wrap around to 0
+```
+
+These are private member variables of the CPU struct, updated automatically by arithmetic instructions and checked by conditional jump instructions.

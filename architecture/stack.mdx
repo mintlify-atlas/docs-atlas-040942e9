@@ -1,0 +1,416 @@
+---
+title: Stack Architecture
+description: Hardware stack implementation, operations, and memory layout
+---
+
+## Stack Structure
+
+The Neodymium VM includes a hardware stack located at a fixed memory address. The stack is defined in `stack.h` and implemented in `stack.cpp`.
+
+<CodeGroup>
+```cpp stack.h
+struct Stack {
+    private:
+    bytes stack;  // Pointer to stack memory
+    byte sp;      // Stack pointer (8-bit)
+
+    public:
+    Stack(byte* stack_start);
+    byte peek();
+    byte pop();
+    uint16_t pop_16bit();
+    void push(byte data);
+    void push_16bit(uint16_t data);
+};
+```
+</CodeGroup>
+
+## Memory Location
+
+The stack occupies **256 bytes** in RAM from `0xCF00` to `0xCFFF`:
+
+<CodeGroup>
+```cpp cpu.cpp
+#define STACK_ADDRESS 0xcf00
+
+CPU::CPU()
+: stack(Stack(&(ram.memory[STACK_ADDRESS])))
+{
+    // Stack is initialized with a pointer to RAM[0xCF00]
+}
+```
+</CodeGroup>
+
+### Memory Layout
+
+| Component | Details |
+|-----------|----------|
+| **Base Address** | `0xCF00` |
+| **Top Address** | `0xCFFF` |
+| **Size** | 256 bytes |
+| **Growth Direction** | Downward (from 0xCFFF to 0xCF00) |
+
+<Note>
+The stack is part of the main RAM, memory-mapped to addresses `0xCF00-0xCFFF`.
+</Note>
+
+## Stack Pointer
+
+The **stack pointer (sp)** is an 8-bit register that tracks the current stack position:
+
+- **Type**: `byte` (8-bit unsigned)
+- **Initial Value**: `0` (stack is empty)
+- **Range**: `0-255`
+- **Interpretation**: Offset from the top of the stack
+
+<CodeGroup>
+```cpp stack.cpp
+Stack::Stack(byte* stack_start) : sp(0) {
+    stack = stack_start;
+}
+```
+</CodeGroup>
+
+### Stack Addressing
+
+The stack grows **downward** from `0xCFFF`. The actual memory address is calculated as:
+
+```
+Actual Address = stack[255 - sp]
+```
+
+- When `sp = 0`: Top of stack is at `stack[255]` = `0xCFFF`
+- When `sp = 1`: Top of stack is at `stack[254]` = `0xCFFE`
+- When `sp = 255`: Top of stack is at `stack[0]` = `0xCF00`
+
+<Info>
+This downward growth is a common convention in computer architecture, allowing the stack to start at the highest address and grow toward lower addresses.
+</Info>
+
+## Stack Operations
+
+### Push (8-bit)
+
+Pushes a single byte onto the stack:
+
+<CodeGroup>
+```cpp stack.cpp
+void Stack::push(byte data) {
+    stack[255-sp] = data;
+    sp++;   
+}
+```
+</CodeGroup>
+
+**Process**:
+1. Write data to `stack[255-sp]`
+2. Increment stack pointer
+
+**Example**:
+```cpp
+// Initial: sp = 0
+stack.push(0x42);  // Writes 0x42 to stack[255], sp = 1
+stack.push(0x43);  // Writes 0x43 to stack[254], sp = 2
+```
+
+**Assembly Usage**:
+```asm
+PUSH $a    ; Push register $a onto stack
+PUSH #42   ; Push immediate value 42 onto stack
+```
+
+### Pop (8-bit)
+
+Pops a single byte from the stack:
+
+<CodeGroup>
+```cpp stack.cpp
+byte Stack::pop() {
+    byte temp = stack[255-sp];
+    sp--;
+    return temp;
+}
+```
+</CodeGroup>
+
+**Process**:
+1. Read data from `stack[255-sp]`
+2. Decrement stack pointer
+3. Return the value
+
+**Example**:
+```cpp
+// Current: sp = 2, stack[254] = 0x43
+byte value = stack.pop();  // Returns 0x43, sp = 1
+```
+
+**Assembly Usage**:
+```asm
+POP $a     ; Pop top of stack into register $a
+```
+
+<Warning>
+Popping from an empty stack (when `sp = 0`) will cause `sp` to underflow to 255, potentially corrupting data. Always ensure the stack has data before popping.
+</Warning>
+
+### Peek (8-bit)
+
+Reads the top of the stack without removing it:
+
+<CodeGroup>
+```cpp stack.cpp
+byte Stack::peek() {
+    return stack[255-sp];
+}
+```
+</CodeGroup>
+
+**Process**:
+1. Read data from `stack[255-sp]`
+2. Stack pointer remains unchanged
+
+<Note>
+`peek()` is not directly exposed as an assembly instruction but is used internally by the VM.
+</Note>
+
+### Push 16-bit
+
+Pushes a 16-bit address onto the stack (used by `CALL` instruction):
+
+<CodeGroup>
+```cpp stack.cpp
+void Stack::push_16bit(uint16_t data) {
+    byte* bdata = uint16_to_bytes(data);
+    push(bdata[0]);  // Push high byte
+    push(bdata[1]);  // Push low byte
+}
+```
+</CodeGroup>
+
+**Process**:
+1. Convert 16-bit value into two bytes
+2. Push high byte first
+3. Push low byte second
+
+**Example - CALL instruction**:
+<CodeGroup>
+```cpp cpu.cpp
+case 0x50: { // CALL [#0]
+    uint16_t immediate = ram.next_16bit_immediate();
+    
+    stack.push_16bit(ram.pc);  // Save return address
+    ram.pc = immediate;         // Jump to subroutine
+    
+    return -1;
+}
+```
+</CodeGroup>
+
+### Pop 16-bit
+
+Pops a 16-bit address from the stack (used by `RET` instruction):
+
+<CodeGroup>
+```cpp stack.cpp
+uint16_t Stack::pop_16bit() {
+    byte x = pop();  // Pop low byte
+    byte y = pop();  // Pop high byte
+    return bytes_to_uint16(y, x);
+}
+```
+</CodeGroup>
+
+**Process**:
+1. Pop low byte
+2. Pop high byte
+3. Combine bytes into 16-bit address
+
+**Example - RET instruction**:
+<CodeGroup>
+```cpp cpu.cpp
+case 0x52: { // RET
+    uint16_t addr = stack.pop_16bit();
+    ram.pc = addr;  // Return to saved address
+    return -1;
+}
+```
+</CodeGroup>
+
+<Info>
+The order matters: 16-bit values are pushed high-byte-first and popped low-byte-first to maintain correct byte order.
+</Info>
+
+## Stack Capacity
+
+The stack can hold:
+
+- **8-bit values**: Maximum 256 bytes
+- **16-bit values**: Maximum 128 addresses (each uses 2 bytes)
+- **Mixed usage**: Any combination totaling 256 bytes
+
+### Stack Overflow
+
+Stack overflow occurs when `sp` exceeds 255:
+
+```cpp
+// If sp = 255 and you push another byte:
+stack.push(data);  // sp becomes 0 (wraps around)
+                   // This overwrites the bottom of the stack!
+```
+
+<Warning>
+**Stack overflow is NOT detected by the VM!** It will silently wrap around and corrupt stack data. Ensure your program doesn't exceed the 256-byte limit.
+</Warning>
+
+### Stack Underflow
+
+Stack underflow occurs when `sp = 0` and you pop:
+
+```cpp
+// If sp = 0 (empty stack) and you pop:
+stack.pop();  // sp becomes 255 (wraps around)
+              // Returns garbage data from stack[255]
+```
+
+<Warning>
+**Stack underflow is NOT detected by the VM!** Always track your push/pop operations carefully.
+</Warning>
+
+## Common Usage Patterns
+
+### Subroutine Calls
+
+The `CALL` and `RET` instructions use the stack automatically:
+
+```asm
+; Main program
+CALL [subroutine]  ; Pushes return address, jumps to subroutine
+; ... execution continues here after RET
+
+subroutine:
+    ; ... subroutine code ...
+    RET            ; Pops return address, jumps back
+```
+
+### Temporary Storage
+
+Save and restore register values:
+
+```asm
+; Save registers
+PUSH $a
+PUSH $b
+
+; Use registers for something else
+MOV $a, #10
+MOV $b, #20
+
+; Restore registers
+POP $b
+POP $a
+```
+
+<Note>
+Remember: **Last In, First Out (LIFO)**. The order of pops must be the reverse of pushes.
+</Note>
+
+### Parameter Passing
+
+Pass parameters to subroutines via the stack:
+
+```asm
+; Caller: Push parameters
+PUSH #10        ; First parameter
+PUSH #20        ; Second parameter
+CALL [function]
+
+; Callee: Pop parameters
+function:
+    POP $a      ; Second parameter (top of stack)
+    POP $b      ; First parameter
+    ; ... use $a and $b ...
+    RET
+```
+
+## Stack Inspection
+
+The stack memory can be read directly from RAM:
+
+```asm
+; Read stack memory at offset
+MOV $a, #0xCF     ; High byte of stack address
+MOV $b, #0xFF     ; Low byte (0xCFFF = top of stack)
+MOV $c, [$a,$b]   ; Read from stack[255]
+```
+
+<Warning>
+Direct stack memory reads bypass the stack pointer and can lead to confusion. Use with caution.
+</Warning>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Balance Pushes and Pops">
+    Every `PUSH` should have a corresponding `POP`. Unbalanced operations lead to stack corruption.
+    
+    ```asm
+    PUSH $a
+    PUSH $b
+    ; Do work
+    POP $b   ; Always pop in reverse order
+    POP $a
+    ```
+  </Accordion>
+  
+  <Accordion title="Monitor Stack Depth">
+    Keep track of how many bytes are on the stack, especially in recursive functions or deep call chains.
+    
+    - Each `PUSH`: +1 byte
+    - Each `CALL`: +2 bytes (return address)
+    - Maximum depth: 256 bytes total
+  </Accordion>
+  
+  <Accordion title="Clear Stack on Exit">
+    If a function pushes temporary values, always pop them before returning:
+    
+    ```asm
+    function:
+        PUSH $a    ; Save $a
+        ; ... work ...
+        POP $a     ; Restore $a
+        RET        ; Stack is clean
+    ```
+  </Accordion>
+  
+  <Accordion title="Avoid Deep Recursion">
+    With only 256 bytes, recursive functions can quickly overflow. Each recursion level uses:
+    - 2 bytes for return address
+    - Any local variables pushed
+    
+    Maximum safe recursion depth: ~50-100 levels depending on usage.
+  </Accordion>
+</AccordionGroup>
+
+## Implementation Details
+
+The stack is implemented as a pointer to a region of RAM:
+
+<CodeGroup>
+```cpp stack.cpp
+Stack::Stack(byte* stack_start) : sp(0) {
+    stack = stack_start;  // Points to ram.memory[0xCF00]
+}
+```
+</CodeGroup>
+
+This design means:
+- Stack operations are **memory writes** to RAM
+- No separate stack hardware
+- Stack memory is **visible** in the global address space
+- Programs can read (but shouldn't write) stack memory directly
+
+## See Also
+
+- [Memory Architecture](/architecture/memory) - RAM layout and stack location
+- [CPU Architecture](/architecture/cpu) - CALL/RET instruction implementation
+- [Instruction Set Reference](/reference/opcodes) - PUSH, POP, CALL, RET opcodes

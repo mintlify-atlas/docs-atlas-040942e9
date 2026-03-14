@@ -1,0 +1,103 @@
+---
+title: Architecture Overview
+description: High-level architecture of the Neodymium VM 8-bit virtual machine
+---
+
+## System Architecture
+
+Neodymium VM is an 8-bit virtual machine consisting of four main components that work together to execute programs:
+
+<CardGroup cols={2}>
+  <Card title="CPU" icon="microchip" href="/architecture/cpu">
+    8 general-purpose registers with flag-based execution control
+  </Card>
+  <Card title="Memory (RAM)" icon="memory" href="/architecture/memory">
+    64KB addressable space with memory-mapped I/O regions
+  </Card>
+  <Card title="Stack" icon="layer-group" href="/architecture/stack">
+    256-byte hardware stack for subroutine calls and data storage
+  </Card>
+  <Card title="Display" icon="tv" href="/architecture/display">
+    16x16 pixel memory-mapped framebuffer with GLFW rendering
+  </Card>
+</CardGroup>
+
+## Component Interaction
+
+The CPU orchestrates all system operations, managing the other three components:
+
+```cpp
+struct CPU
+{
+    RAM ram;
+    Stack stack;
+    Screen screen;
+    // ...
+};
+```
+
+### Execution Flow
+
+1. **Fetch**: CPU reads the next instruction from RAM at address `pc` (program counter)
+2. **Decode**: The opcode is interpreted by the CPU's `tick()` method
+3. **Execute**: The instruction is executed, potentially:
+   - Reading/writing registers
+   - Accessing RAM memory
+   - Pushing/popping from the stack
+   - Updating the display framebuffer
+4. **Repeat**: The CPU continues until a HALT instruction is encountered
+
+<CodeGroup>
+```cpp cpu.cpp
+int CPU::run() {
+    while (true) {
+        int res = tick();
+        if (res != -1) {
+            return res;
+        }
+        screen.tick();
+    }
+}
+```
+</CodeGroup>
+
+## Memory Map
+
+The 64KB address space is organized as follows:
+
+| Address Range | Size | Purpose |
+|--------------|------|----------|
+| `0x0000-0x9FFF` | 40KB | General-purpose RAM and program storage |
+| `0xA000-0xCEFF` | ~12KB | Memory-mapped screen framebuffer |
+| `0xCF00-0xCFFF` | 256 bytes | Hardware stack |
+| `0xD000-0xFFFF` | 12KB | General-purpose RAM |
+
+<Note>
+The screen framebuffer is located at `0xA000` and the stack at `0xCF00`, as defined in `cpu.cpp:10-11`.
+</Note>
+
+## Memory-Mapped I/O
+
+Neodymium VM uses memory-mapped I/O for peripheral access:
+
+- **Screen**: Writing to addresses starting at `0xA000` directly updates the display
+- **Stack**: The stack operates on memory at `0xCF00-0xCFFF`, managed by dedicated push/pop operations
+
+This architecture allows programs to interact with hardware through simple memory writes, making I/O programming straightforward.
+
+## Design Philosophy
+
+The VM is designed with simplicity in mind:
+
+- **8-bit operations**: All registers and memory addresses hold single bytes
+- **16-bit addressing**: Addresses are constructed from two 8-bit registers or immediates
+- **Flag-based control**: Conditional jumps use CPU flags (zero, overflow, underflow)
+- **Memory-mapped peripherals**: All I/O is handled through memory writes
+
+<Info>
+For detailed information about each component, see the dedicated pages:
+- [CPU Architecture](/architecture/cpu)
+- [Memory System](/architecture/memory)
+- [Stack Operations](/architecture/stack)
+- [Display System](/architecture/display)
+</Info>

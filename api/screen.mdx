@@ -1,0 +1,261 @@
+---
+title: Screen
+description: Graphics display module for rendering a 16x16 pixel framebuffer
+---
+
+The `Screen` struct provides graphics output capabilities through a 16x16 pixel RGB display, rendered using OpenGL and GLFW.
+
+## Overview
+
+The screen is memory-mapped to RAM starting at address 0xA000 and provides a 16x16 pixel display with RGB color support. Each pixel requires 3 bytes (RGB), for a total of 768 bytes (16 × 16 × 3).
+
+## Definition
+
+```cpp
+struct Screen {
+    private:
+    bytes framebuffer;
+    GLFWwindow* window;
+
+    public:
+    Screen(byte* addr_ptr);
+    void tick();
+    void terminate();
+};
+```
+
+Defined in: `screen.h:10`
+
+## Constants
+
+<ParamField path="HEIGHT" type="#define" default="16">
+  The height of the display in pixels.
+</ParamField>
+
+<ParamField path="WIDTH" type="#define" default="16">
+  The width of the display in pixels.
+</ParamField>
+
+<ParamField path="ZOOM" type="#define" default="32">
+  The zoom factor for rendering. Each pixel is rendered as a 32×32 pixel block, making the actual window size 512×512 pixels.
+</ParamField>
+
+Defined in: `screen.h:5-8`
+
+## Members
+
+<ParamField path="framebuffer" type="bytes">
+  Pointer to the framebuffer memory region. Points to a 768-byte region in RAM (0xA000-0xA2FF) that stores RGB data for all pixels.
+</ParamField>
+
+<ParamField path="window" type="GLFWwindow*">
+  Pointer to the GLFW window used for rendering the display.
+</ParamField>
+
+Defined in: `screen.h:12-13`
+
+## Constructor
+
+### Screen()
+
+```cpp
+Screen(byte* addr_ptr)
+```
+
+Initializes the screen and creates the display window.
+
+Defined in: `screen.cpp:4`
+
+<ParamField path="addr_ptr" type="byte*">
+  Pointer to the framebuffer memory region in RAM (typically &ram.memory[0xA000]).
+</ParamField>
+
+**Behavior:**
+- Sets the framebuffer pointer to the provided memory address
+- Initializes GLFW library
+- Creates a window sized WIDTH × ZOOM by HEIGHT × ZOOM (512×512 pixels)
+- Sets the window title to "Neodymium vScreen"
+- Makes the OpenGL context current
+- Raises SIGABRT error if GLFW initialization or window creation fails
+
+**Example:**
+
+```cpp
+RAM ram;
+Screen screen(&ram.memory[0xA000]);
+```
+
+## Methods
+
+### tick()
+
+```cpp
+void tick()
+```
+
+Updates and renders the display for one frame.
+
+Defined in: `screen.cpp:31`
+
+**Behavior:**
+- Checks if the window should close (user clicked X button)
+  - If closing, terminates GLFW and raises SIGKILL
+- Clears the color buffer
+- Sets pixel zoom to ZOOM factor (32×)
+- Sets raster position to origin (0, 0)
+- Renders the framebuffer as a 16×16 RGB image using `glDrawPixels()`
+- Swaps the front and back buffers (double buffering)
+- Polls for window events (keyboard, mouse, etc.)
+
+**Example:**
+
+```cpp
+Screen screen(&ram.memory[0xA000]);
+
+// Set a red pixel at (0, 0)
+ram.memory[0xA000] = 255; // R
+ram.memory[0xA001] = 0;   // G  
+ram.memory[0xA002] = 0;   // B
+
+screen.tick(); // Render the frame
+```
+
+### terminate()
+
+```cpp
+void terminate()
+```
+
+Cleanly shuts down the display system.
+
+Defined in: `screen.cpp:56`
+
+**Behavior:**
+- Calls `glfwTerminate()` to close the window and clean up GLFW resources
+
+**Example:**
+
+```cpp
+Screen screen(&ram.memory[0xA000]);
+// ... program execution ...
+screen.terminate(); // Clean shutdown
+```
+
+## Framebuffer Layout
+
+The framebuffer is organized as a linear array of RGB values:
+
+```
+Address     Pixel    Component
+0xA000      (0,0)    Red
+0xA001      (0,0)    Green
+0xA002      (0,0)    Blue
+0xA003      (1,0)    Red
+0xA004      (1,0)    Green
+0xA005      (1,0)    Blue
+...
+0xA2FD      (15,15)  Red
+0xA2FE      (15,15)  Green
+0xA2FF      (15,15)  Blue
+```
+
+To calculate the address for pixel (x, y):
+```cpp
+uint16_t pixel_address = 0xA000 + ((y * WIDTH + x) * 3);
+ram.memory[pixel_address + 0] = red;   // R (0-255)
+ram.memory[pixel_address + 1] = green; // G (0-255)
+ram.memory[pixel_address + 2] = blue;  // B (0-255)
+```
+
+## Display Specifications
+
+- **Resolution**: 16×16 pixels
+- **Color Depth**: 24-bit RGB (8 bits per channel)
+- **Window Size**: 512×512 pixels (16 × 32 zoom)
+- **Framebuffer Size**: 768 bytes (16 × 16 × 3)
+- **Memory Range**: 0xA000 to 0xA2FF
+- **Refresh**: Called once per CPU instruction in `CPU::run()`
+
+## Example Usage
+
+```cpp
+#include "ram.h"
+#include "screen.h"
+
+int main() {
+    RAM ram;
+    Screen screen(&ram.memory[0xA000]);
+    
+    // Draw a red pixel at (5, 5)
+    uint16_t addr = 0xA000 + ((5 * 16 + 5) * 3);
+    ram.memory[addr + 0] = 255; // Red
+    ram.memory[addr + 1] = 0;   // Green
+    ram.memory[addr + 2] = 0;   // Blue
+    
+    // Draw a green pixel at (10, 10)
+    addr = 0xA000 + ((10 * 16 + 10) * 3);
+    ram.memory[addr + 0] = 0;   // Red
+    ram.memory[addr + 1] = 255; // Green
+    ram.memory[addr + 2] = 0;   // Blue
+    
+    // Render for a few frames
+    for (int i = 0; i < 100; i++) {
+        screen.tick();
+    }
+    
+    screen.terminate();
+    return 0;
+}
+```
+
+## Drawing Patterns
+
+### Fill Screen with Color
+
+```cpp
+void fill_screen(RAM& ram, byte r, byte g, byte b) {
+    for (int y = 0; y < 16; y++) {
+        for (int x = 0; x < 16; x++) {
+            uint16_t addr = 0xA000 + ((y * 16 + x) * 3);
+            ram.memory[addr + 0] = r;
+            ram.memory[addr + 1] = g;
+            ram.memory[addr + 2] = b;
+        }
+    }
+}
+```
+
+### Draw Horizontal Line
+
+```cpp
+void draw_hline(RAM& ram, int y, byte r, byte g, byte b) {
+    for (int x = 0; x < 16; x++) {
+        uint16_t addr = 0xA000 + ((y * 16 + x) * 3);
+        ram.memory[addr + 0] = r;
+        ram.memory[addr + 1] = g;
+        ram.memory[addr + 2] = b;
+    }
+}
+```
+
+### Draw Vertical Line
+
+```cpp
+void draw_vline(RAM& ram, int x, byte r, byte g, byte b) {
+    for (int y = 0; y < 16; y++) {
+        uint16_t addr = 0xA000 + ((y * 16 + x) * 3);
+        ram.memory[addr + 0] = r;
+        ram.memory[addr + 1] = g;
+        ram.memory[addr + 2] = b;
+    }
+}
+```
+
+## Notes
+
+- The screen is memory-mapped, so any writes to 0xA000-0xA2FF will appear on the display after the next `tick()`
+- The display uses OpenGL for rendering, requiring appropriate graphics drivers
+- Closing the window (clicking X) will raise SIGKILL and terminate the program
+- The screen is rendered after every CPU instruction when using `CPU::run()`
+- Color values range from 0 to 255 for each RGB component
+- Pixels are stored in row-major order (left to right, top to bottom)

@@ -1,97 +1,120 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Neodymium VM"
+description: "An open-source 8-bit virtual machine with CPU, RAM, stack, and display capabilities"
 ---
 
-## Setting up
+<div className="bg-white border border-[#e0e0e0] rounded-lg p-8 shadow-[0_2px_8px_rgba(0,0,0,0.05)]">
+  <h1 className="text-5xl font-bold text-[#1a1a1a] mb-4" style={{ fontFamily: 'Inter' }}>
+    Neodymium VM
+  </h1>
+  <p className="text-xl text-[#545454] mb-6" style={{ fontFamily: 'Inter' }}>
+    A complete 8-bit virtual machine for learning, experimentation, and low-level programming
+  </p>
+  <div className="flex gap-4">
+    <a 
+      href="/installation" 
+      className="px-6 py-3 bg-[#94cb04] text-[#1a1a1a] rounded-md font-bold hover:opacity-90 transition-opacity"
+      style={{ fontFamily: 'Inter', borderRadius: '6px' }}
+    >
+      Get Started
+    </a>
+    <a 
+      href="https://github.com/cr4t3/Neodymium" 
+      className="px-6 py-3 bg-transparent text-[#1a1a1a] border border-[#1a1a1a] rounded-none font-bold hover:bg-[#e6e6e6] transition-colors"
+      style={{ fontFamily: 'Inter', borderRadius: '0px' }}
+    >
+      View on GitHub
+    </a>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+## Key Features
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="8-bit CPU" icon="microchip" href="/architecture/cpu">
+    8 general-purpose registers with flag system for zero, overflow, and underflow detection
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="64KB RAM" icon="memory" href="/architecture/memory">
+    Full 64KB addressable memory space with memory-mapped I/O
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Stack Operations" icon="layer-group" href="/architecture/stack">
+    256-byte dedicated stack with push, pop, call, and return support
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="16x16 Display" icon="display" href="/architecture/display">
+    Built-in graphical display with memory-mapped framebuffer
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Rich Instruction Set
 
-Everything you need to create world-class documentation.
+Neodymium VM provides over 50 opcodes covering:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={3}>
+  <Card title="Data Movement" icon="arrows-turn-right">
+    MOV instructions for register, immediate, and memory operations
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Arithmetic" icon="calculator">
+    ADD, SUB, MUL, DIV, INC, DEC, PWR, SQRT, and MOD operations
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Logic & Bitwise" icon="code-branch">
+    AND, NOT, and comparison operations
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Control Flow" icon="route">
+    Conditional and unconditional jumps with flag-based branching
   </Card>
-</Columns>
+  <Card title="Stack & Subroutines" icon="brackets-curly">
+    PUSH, POP, CALL, and RET for function calls and stack management
+  </Card>
+  <Card title="Memory Access" icon="database">
+    STORE instructions for writing to RAM and memory-mapped devices
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## Quick Example
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+Here's a simple program that adds two numbers:
+
+```asm example.asm
+; Load values into registers
+MOV $a, #10    ; Load 10 into register $a
+MOV $b, #20    ; Load 20 into register $b
+
+; Add them
+ADD $a, $b     ; $a = $a + $b (result: 30)
+
+; Halt with result
+HALT $a        ; Exit with code in $a
+```
+
+## System Requirements
+
+<Note>
+  Neodymium VM currently supports UNIX-based operating systems only (Linux, macOS). Windows support is planned for future releases.
+</Note>
+
+**Minimum Requirements:**
+- 128 KB of RAM
+- 1 CPU core
+- 8 MB storage
+
+**Build Dependencies:**
+- C++17 or higher compiler
+- CMake 3.31.6 or higher
+- GLFW 3.4 or higher (for display output)
+
+## Get Started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Build Neodymium VM from source
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first program
+  </Card>
+  <Card title="Instruction Set" icon="book" href="/programming/instruction-set">
+    Learn the complete instruction set
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/cpu">
+    Explore the internal C++ API
+  </Card>
+</CardGroup>

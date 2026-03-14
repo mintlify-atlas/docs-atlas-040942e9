@@ -1,0 +1,510 @@
+---
+title: 'Instruction Set'
+description: 'Complete reference for Neodymium VM instructions'
+icon: 'book'
+---
+
+## Overview
+
+The Neodymium VM provides a comprehensive RISC-style instruction set with 60+ opcodes organized into six functional categories. All instructions operate on 8-bit data, with support for 16-bit addressing.
+
+## Instruction Categories
+
+<CardGroup cols={2}>
+  <Card title="Data Movement" icon="arrows-left-right" href="#data-movement-instructions">
+    Move data between registers and memory  
+    **Opcodes:** MOV (0x01-0x04)
+  </Card>
+  
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic-instructions">
+    Mathematical operations and calculations  
+    **Opcodes:** ADD, SUB, MUL, DIV, PWR, SQRT, MOD (0x40-0x4F)
+  </Card>
+  
+  <Card title="Logic" icon="circle-nodes" href="#logic-instructions">
+    Bitwise and logical operations  
+    **Opcodes:** NOT, AND (0x10-0x12)
+  </Card>
+  
+  <Card title="Control Flow" icon="diagram-project" href="#control-flow-instructions">
+    Jumps, branches, and comparisons  
+    **Opcodes:** JMP, JZ, JNZ, JU, JO, CMP (0x20-0x2F)
+  </Card>
+  
+  <Card title="Stack Operations" icon="layer-group" href="#stack-instructions">
+    Push and pop data on the stack  
+    **Opcodes:** PUSH, POP (0x30-0x32)
+  </Card>
+  
+  <Card title="Subroutines" icon="function" href="#subroutine-instructions">
+    Function calls and returns  
+    **Opcodes:** CALL, RET (0x50-0x52)
+  </Card>
+</CardGroup>
+
+<Card title="Memory Operations" icon="memory" href="#memory-instructions">
+  Store data to memory addresses  
+  **Opcodes:** STORE (0x60-0x63)
+</Card>
+
+<Card title="System Control" icon="power-off" href="#system-instructions">
+  Control VM execution  
+  **Opcodes:** NOP, HALT (0x00, 0xFD-0xFF)
+</Card>
+
+## Instruction Format
+
+Neodymium instructions use variable-length encoding:
+
+<Steps>
+  <Step title="Opcode Byte">
+    First byte specifies the operation (e.g., `0x01` for MOV)
+  </Step>
+  <Step title="Operand Bytes">
+    Following bytes specify registers or immediate values
+    - Register: 1 byte (0x00-0x07, 0xFF)
+    - 8-bit immediate: 1 byte (#0)
+    - 16-bit address: 2 bytes (high, low)
+  </Step>
+</Steps>
+
+**Example:**
+```asm
+MOV $a, 42          ; Encoding: [0x02, 0x00, 0x2A]
+                    ; 0x02 = MOV immediate opcode
+                    ; 0x00 = $a register
+                    ; 0x2A = 42 decimal
+```
+
+## Notation Guide
+
+<Info>
+  - `$x`, `$y`, `$z` - Any register ($a-$h or ALWAYS_ZERO)
+  - `#0`, `#1` - 8-bit immediate value (0-255)
+  - `[#0]` - 16-bit memory address
+  - `[$x, $y]` - Address formed by two registers (high, low)
+  - `()` - Optional operand
+</Info>
+
+---
+
+## Data Movement Instructions
+
+Move data between registers and memory locations.
+
+<AccordionGroup>
+  <Accordion title="MOV $x, $y" icon="arrow-right">
+    **Opcode:** `0x01`  
+    **Operation:** Copy register to register  
+    **Effect:** `$y → $x`
+    
+    ```asm
+    MOV $a, $b      ; Copy $b into $a
+    ```
+    
+    **Encoding:** `[0x01, reg_x, reg_y]`
+  </Accordion>
+  
+  <Accordion title="MOV $x, #0" icon="hashtag">
+    **Opcode:** `0x02`  
+    **Operation:** Load immediate value into register  
+    **Effect:** `#0 → $x`
+    
+    ```asm
+    MOV $a, 255     ; Load 255 into $a
+    ```
+    
+    **Encoding:** `[0x02, reg_x, immediate]`
+  </Accordion>
+  
+  <Accordion title="MOV $x, [#0]" icon="location-dot">
+    **Opcode:** `0x03`  
+    **Operation:** Load from memory address  
+    **Effect:** `[#0] → $x`
+    
+    ```asm
+    MOV $a, [0x1000]    ; Load byte from address 0x1000
+    ```
+    
+    **Encoding:** `[0x03, reg_x, addr_high, addr_low]`
+  </Accordion>
+  
+  <Accordion title="MOV $x, [$y, $z]" icon="location-crosshairs">
+    **Opcode:** `0x04`  
+    **Operation:** Load from register-indirect address  
+    **Effect:** `[$y, $z] → $x`
+    
+    ```asm
+    MOV $g, 0xA0        ; High byte
+    MOV $h, 0x00        ; Low byte
+    MOV $a, [$g, $h]    ; Load from 0xA000
+    ```
+    
+    **Encoding:** `[0x04, reg_x, reg_y, reg_z]`
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Arithmetic Instructions
+
+Perform mathematical operations. All operations update CPU flags (zero, overflow, underflow).
+
+<AccordionGroup>
+  <Accordion title="ADD $x, #0 / ADD $x, $y" icon="plus">
+    **Opcodes:** `0x40` (immediate), `0x41` (register)  
+    **Operation:** Addition  
+    **Effect:** `$x + operand → $x`  
+    **Flags:** Sets zero, overflow, underflow
+    
+    ```asm
+    ADD $a, 10      ; $a = $a + 10
+    ADD $b, $c      ; $b = $b + $c
+    ```
+  </Accordion>
+  
+  <Accordion title="SUB $x, #0 / SUB $x, $y" icon="minus">
+    **Opcodes:** `0x43` (immediate), `0x44` (register)  
+    **Operation:** Subtraction  
+    **Effect:** `$x - operand → $x`  
+    **Flags:** Sets zero, overflow, underflow
+    
+    ```asm
+    SUB $a, 5       ; $a = $a - 5
+    SUB $b, $c      ; $b = $b - $c
+    ```
+  </Accordion>
+  
+  <Accordion title="INC $x / DEC $x" icon="arrows-up-down">
+    **Opcodes:** `0x42` (increment), `0x45` (decrement)  
+    **Operation:** Increment/decrement by 1  
+    **Effect:** `$x++` or `$x--`  
+    **Flags:** Sets overflow on wraparound
+    
+    ```asm
+    INC $a          ; $a = $a + 1
+    DEC $b          ; $b = $b - 1
+    ```
+  </Accordion>
+  
+  <Accordion title="MUL $x, #0 / MUL $x, $y" icon="xmark">
+    **Opcodes:** `0x46` (immediate), `0x47` (register)  
+    **Operation:** Multiplication  
+    **Effect:** `$x * operand → $x`  
+    **Flags:** Sets zero, overflow, underflow
+    
+    ```asm
+    MUL $a, 3       ; $a = $a * 3
+    MUL $b, $c      ; $b = $b * $c
+    ```
+    
+    <Warning>Result is truncated to 8 bits. Overflow flag indicates if result exceeded 255.</Warning>
+  </Accordion>
+  
+  <Accordion title="DIV $x, #0 / DIV $x, $y" icon="divide">
+    **Opcodes:** `0x48` (immediate), `0x49` (register)  
+    **Operation:** Division (rounded)  
+    **Effect:** `$x / operand → $x`  
+    **Flags:** Sets zero, overflow, underflow
+    
+    ```asm
+    DIV $a, 2       ; $a = $a / 2 (rounded)
+    DIV $b, $c      ; $b = $b / $c
+    ```
+    
+    <Note>Division is rounded to nearest integer using standard rounding.</Note>
+  </Accordion>
+  
+  <Accordion title="MOD $x, #0 / MOD $x, $y" icon="percent">
+    **Opcodes:** `0x4F` (immediate), `0x4E` (register)  
+    **Operation:** Modulo (remainder)  
+    **Effect:** `$x % operand → $x`  
+    **Flags:** Sets zero, overflow, underflow
+    
+    ```asm
+    MOD $a, 10      ; $a = $a % 10
+    MOD $b, $c      ; $b = $b % $c
+    ```
+  </Accordion>
+  
+  <Accordion title="PWR $x, #0 / PWR $x, $y" icon="superscript">
+    **Opcodes:** `0x4A` (immediate), `0x4B` (register)  
+    **Operation:** Exponentiation  
+    **Effect:** `$x ** operand → $x`  
+    **Flags:** Sets overflow if result > 255
+    
+    ```asm
+    PWR $a, 2       ; $a = $a²
+    PWR $b, $c      ; $b = $b^$c
+    ```
+    
+    <Warning>Raises SIGABRT if either base or exponent is zero.</Warning>
+  </Accordion>
+  
+  <Accordion title="SQRT $x / FSQRT $x" icon="square-root-variable">
+    **Opcodes:** `0x4C` (fast), `0x4D` (accurate)  
+    **Operation:** Square root  
+    **Effect:** `√$x → $x`  
+    **Flags:** Sets zero flag
+    
+    ```asm
+    SQRT $a         ; Fast approximation (Quake III algorithm)
+    FSQRT $b        ; Accurate square root
+    ```
+    
+    <Info>SQRT uses the famous Quake III fast inverse square root algorithm for speed. FSQRT uses standard library for accuracy.</Info>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Logic Instructions
+
+Bitwise logical operations.
+
+<AccordionGroup>
+  <Accordion title="NOT $x" icon="not-equal">
+    **Opcode:** `0x10`  
+    **Operation:** Bitwise NOT  
+    **Effect:** `~$x → $x`
+    
+    ```asm
+    NOT $a          ; $a = ~$a (invert all bits)
+    ```
+  </Accordion>
+  
+  <Accordion title="AND $x, #0 / AND $x, $y" icon="circle-half-stroke">
+    **Opcodes:** `0x12` (immediate), `0x11` (register)  
+    **Operation:** Bitwise AND  
+    **Effect:** `$x & operand → $x`
+    
+    ```asm
+    AND $a, 0x0F    ; Mask lower 4 bits
+    AND $b, $c      ; $b = $b & $c
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Control Flow Instructions
+
+Comparisons, jumps, and conditional branches.
+
+<AccordionGroup>
+  <Accordion title="CMP $x, #0 / CMP $x, $y" icon="not-equal">
+    **Opcodes:** `0x22` (immediate), `0x23` (register)  
+    **Operation:** Compare (subtract without storing)  
+    **Effect:** `$x - operand` (sets flags only)  
+    **Flags:** Sets zero, underflow, overflow
+    
+    ```asm
+    CMP $a, 42      ; Compare $a with 42
+    JZ [equal]      ; Jump if they're equal
+    ```
+  </Accordion>
+  
+  <Accordion title="JMP [#0] / JMP [$x, $y]" icon="angles-right">
+    **Opcodes:** `0x20` (immediate), `0x21` (register)  
+    **Operation:** Unconditional jump  
+    **Effect:** Set PC to target address
+    
+    ```asm
+    JMP [0x0100]    ; Jump to address 0x0100
+    JMP [$g, $h]    ; Jump to address in registers
+    ```
+  </Accordion>
+  
+  <Accordion title="JZ / JNZ - Jump if (Not) Zero" icon="0">
+    **Opcodes:** `0x24`/`0x25` (JZ), `0x26`/`0x27` (JNZ)  
+    **Condition:** Zero flag = true (JZ) or false (JNZ)  
+    
+    ```asm
+    CMP $a, 0
+    JZ [is_zero]    ; Jump if $a equals 0
+    JNZ [not_zero]  ; Jump if $a doesn't equal 0
+    ```
+  </Accordion>
+  
+  <Accordion title="JU / JNU - Jump if (Not) Underflow" icon="arrow-down">
+    **Opcodes:** `0x28`/`0x29` (JU), `0x2A`/`0x2B` (JNU)  
+    **Condition:** Underflow flag = true (JU) or false (JNU)  
+    
+    ```asm
+    CMP $a, $b
+    JU [a_less]     ; Jump if $a < $b (underflow)
+    ```
+  </Accordion>
+  
+  <Accordion title="JO / JNO - Jump if (Not) Overflow" icon="arrow-up">
+    **Opcodes:** `0x2C`/`0x2D` (JO), `0x2E`/`0x2F` (JNO)  
+    **Condition:** Overflow flag = true (JO) or false (JNO)  
+    
+    ```asm
+    ADD $a, $b
+    JO [overflow]   ; Jump if addition overflowed
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Stack Instructions
+
+Manipulate the call stack (0xCF00-0xCFFF).
+
+<AccordionGroup>
+  <Accordion title="PUSH $x / PUSH #0" icon="arrow-down-to-line">
+    **Opcodes:** `0x30` (register), `0x31` (immediate)  
+    **Operation:** Push value onto stack  
+    
+    ```asm
+    PUSH $a         ; Push register value
+    PUSH 42         ; Push immediate value
+    ```
+  </Accordion>
+  
+  <Accordion title="POP $x" icon="arrow-up-from-line">
+    **Opcode:** `0x32`  
+    **Operation:** Pop value from stack into register  
+    
+    ```asm
+    POP $a          ; Pop into $a
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Subroutine Instructions
+
+Function calls and returns using the stack.
+
+<AccordionGroup>
+  <Accordion title="CALL [#0] / CALL [$x, $y]" icon="phone">
+    **Opcodes:** `0x50` (immediate), `0x51` (register)  
+    **Operation:** Call subroutine  
+    **Effect:** Push return address (2 bytes), jump to target
+    
+    ```asm
+    CALL [0x0500]   ; Call function at 0x0500
+    CALL [$g, $h]   ; Call function at address in registers
+    ```
+  </Accordion>
+  
+  <Accordion title="RET" icon="arrow-rotate-left">
+    **Opcode:** `0x52`  
+    **Operation:** Return from subroutine  
+    **Effect:** Pop return address (2 bytes), jump to it
+    
+    ```asm
+    RET             ; Return to caller
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Memory Instructions
+
+Write data to memory addresses.
+
+<AccordionGroup>
+  <Accordion title="STORE [$x, $y], $z" icon="floppy-disk">
+    **Opcode:** `0x60`  
+    **Operation:** Store register to register-indirect address  
+    **Effect:** `$z → [$x, $y]`
+    
+    ```asm
+    MOV $g, 0xA0
+    MOV $h, 0x00
+    MOV $a, 255
+    STORE [$g, $h], $a  ; Write 255 to 0xA000
+    ```
+  </Accordion>
+  
+  <Accordion title="STORE [#0], $x" icon="download">
+    **Opcode:** `0x61`  
+    **Operation:** Store register to immediate address  
+    **Effect:** `$x → [#0]`
+    
+    ```asm
+    MOV $a, 42
+    STORE [0x1000], $a  ; Write 42 to 0x1000
+    ```
+  </Accordion>
+  
+  <Accordion title="STORE [$x, $y], #0" icon="pen-to-square">
+    **Opcode:** `0x62`  
+    **Operation:** Store immediate to register-indirect address  
+    **Effect:** `#0 → [$x, $y]`
+    
+    ```asm
+    MOV $g, 0x10
+    MOV $h, 0x50
+    STORE [$g, $h], 100  ; Write 100 to 0x1050
+    ```
+  </Accordion>
+  
+  <Accordion title="STORE [#0], #1" icon="file-arrow-down">
+    **Opcode:** `0x63`  
+    **Operation:** Store immediate to immediate address  
+    **Effect:** `#1 → [#0]`
+    
+    ```asm
+    STORE [0x2000], 255  ; Write 255 to 0x2000
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## System Instructions
+
+Control VM execution.
+
+<AccordionGroup>
+  <Accordion title="NOP" icon="circle">
+    **Opcode:** `0x00`  
+    **Operation:** No operation  
+    **Effect:** Do nothing, advance PC
+    
+    ```asm
+    NOP             ; Wait one cycle
+    ```
+  </Accordion>
+  
+  <Accordion title="HALT / HALT #0 / HALT $x" icon="stop">
+    **Opcodes:** `0xFF` (no args), `0xFE` (immediate), `0xFD` (register)  
+    **Operation:** Stop VM execution  
+    **Effect:** Return exit code
+    
+    ```asm
+    HALT            ; Exit with code 0
+    HALT 1          ; Exit with code 1
+    HALT $a         ; Exit with code in $a
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="See Complete Opcode Reference" icon="table" href="/reference/opcodes">
+    Full opcode table with hex values
+  </Card>
+  
+  <Card title="Try Programming Examples" icon="code" href="/programming/examples">
+    Learn with practical code samples
+  </Card>
+  
+  <Card title="Understand Memory Layout" icon="memory" href="/programming/memory-layout">
+    Learn about address space organization
+  </Card>
+  
+  <Card title="Study Registers" icon="microchip" href="/programming/registers">
+    Deep dive into register architecture
+  </Card>
+</CardGroup>

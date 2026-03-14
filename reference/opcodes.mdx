@@ -1,0 +1,254 @@
+---
+title: Opcode Reference
+description: Complete reference for all Neodymium VM opcodes
+---
+
+This page provides a comprehensive reference for all opcodes supported by the Neodymium VM. The VM is an 8-bit virtual machine with 8 general-purpose registers ($a-$h) and a 64KB address space.
+
+## Notation
+
+- `$x/$y/$z` - Any register ($a through $h)
+- `#0/#1` - Immediate 8-bit value (0-255)
+- `[*]` - Memory address (16-bit)
+- `()` - Optional parameter
+
+## Registers
+
+The CPU contains 8 accessible registers:
+- `$a` (0x00) through `$h` (0x07)
+- Special register `0xff` - Always Zero register (read-only, always returns 0)
+
+<AccordionGroup>
+
+<Accordion title="Data Movement (0x00-0x0F)" icon="arrows-left-right">
+
+| Opcode | Instruction | Description |
+|--------|-------------|-------------|
+| 0x00 | NOP | No operation |
+| 0x01 | MOV $x, $y | Copy value from $y to $x |
+| 0x02 | MOV $x, #0 | Load immediate value #0 into $x |
+| 0x03 | MOV $x, [#0] | Load value from memory address [#0] into $x |
+| 0x04 | MOV $x, [$y,$z] | Load value from memory address formed by $y (high byte) and $z (low byte) into $x |
+
+### Details
+
+**NOP (0x00)**
+- No operation, does nothing
+- Used for timing or placeholder purposes
+
+**MOV Instructions**
+- Primary method for moving data between registers and memory
+- Register-to-register moves are single cycle
+- Memory access uses 16-bit addressing (two 8-bit values)
+
+</Accordion>
+
+<Accordion title="Bitwise Operations (0x10-0x1F)" icon="binary">
+
+| Opcode | Instruction | Description |
+|--------|-------------|-------------|
+| 0x10 | NOT $x | Bitwise NOT of $x, result stored in $x |
+| 0x11 | AND $x, $y | Bitwise AND of $x and $y, result stored in $x |
+| 0x12 | AND $x, #0 | Bitwise AND of $x and immediate #0, result stored in $x |
+
+### Details
+
+**NOT (0x10)**
+- Performs bitwise complement (inverts all bits)
+- Example: NOT 0b00001111 = 0b11110000
+
+**AND (0x11, 0x12)**
+- Performs bitwise AND operation
+- Useful for masking bits
+- Example: 0b11110000 AND 0b00001111 = 0b00000000
+
+</Accordion>
+
+<Accordion title="Control Flow (0x20-0x2F)" icon="code-branch">
+
+| Opcode | Instruction | Description |
+|--------|-------------|-------------|
+| 0x20 | JMP [#0] | Unconditional jump to immediate address [#0] |
+| 0x21 | JMP [$x,$y] | Unconditional jump to address formed by $x (high) and $y (low) |
+| 0x22 | CMP $x, #0 | Compare $x with immediate #0 (sets flags, doesn't store result) |
+| 0x23 | CMP $x, $y | Compare $x with $y (sets flags, doesn't store result) |
+| 0x24 | JZ [#0] | Jump to [#0] if zero flag is set |
+| 0x25 | JZ [$x,$y] | Jump to [$x,$y] if zero flag is set |
+| 0x26 | JNZ [#0] | Jump to [#0] if zero flag is NOT set |
+| 0x27 | JNZ [$x,$y] | Jump to [$x,$y] if zero flag is NOT set |
+| 0x28 | JU [#0] | Jump to [#0] if underflow flag is set |
+| 0x29 | JU [$x,$y] | Jump to [$x,$y] if underflow flag is set |
+| 0x2a | JNU [#0] | Jump to [#0] if underflow flag is NOT set |
+| 0x2b | JNU [$x,$y] | Jump to [$x,$y] if underflow flag is NOT set |
+| 0x2c | JO [#0] | Jump to [#0] if overflow flag is set |
+| 0x2d | JO [$x,$y] | Jump to [$x,$y] if overflow flag is set |
+| 0x2e | JNO [#0] | Jump to [#0] if overflow flag is NOT set |
+| 0x2f | JNO [$x,$y] | Jump to [$x,$y] if overflow flag is NOT set |
+
+### Details
+
+**Jump Instructions**
+- JMP: Unconditional jump, changes program counter to specified address
+- Conditional jumps check CPU flags before jumping
+
+**Compare Instructions**
+- CMP performs subtraction but doesn't store the result
+- Only updates the CPU flags (zero, overflow, underflow)
+- Used before conditional jumps to make decisions
+
+**Conditional Jumps**
+- JZ/JNZ: Jump based on zero flag (equality checks)
+- JU/JNU: Jump based on underflow flag (negative results)
+- JO/JNO: Jump based on overflow flag (results > 255)
+
+</Accordion>
+
+<Accordion title="Stack Operations (0x30-0x3F)" icon="layer-group">
+
+| Opcode | Instruction | Description |
+|--------|-------------|-------------|
+| 0x30 | PUSH $x | Push value in $x onto stack |
+| 0x31 | PUSH #0 | Push immediate value #0 onto stack |
+| 0x32 | POP $x | Pop value from stack into $x |
+
+### Details
+
+**Stack Location**
+- Stack is located at memory addresses 0xCF00 to 0xCFFF (256 bytes)
+- Stack grows downward in memory
+
+**PUSH (0x30, 0x31)**
+- Decrements stack pointer and stores value
+- Can push register values or immediate values
+
+**POP (0x32)**
+- Retrieves value from stack and increments stack pointer
+- Stores retrieved value in specified register
+
+</Accordion>
+
+<Accordion title="Arithmetic Operations (0x40-0x4F)" icon="calculator">
+
+| Opcode | Instruction | Description |
+|--------|-------------|-------------|
+| 0x40 | ADD $x, #0 | Add immediate #0 to $x, store result in $x |
+| 0x41 | ADD $x, $y | Add $y to $x, store result in $x |
+| 0x42 | INC $x | Increment $x by 1 |
+| 0x43 | SUB $x, #0 | Subtract immediate #0 from $x, store result in $x |
+| 0x44 | SUB $x, $y | Subtract $y from $x, store result in $x |
+| 0x45 | DEC $x | Decrement $x by 1 |
+| 0x46 | MUL $x, #0 | Multiply $x by immediate #0, store result in $x |
+| 0x47 | MUL $x, $y | Multiply $x by $y, store result in $x |
+| 0x48 | DIV $x, #0 | Divide $x by immediate #0, store result in $x (rounded) |
+| 0x49 | DIV $x, $y | Divide $x by $y, store result in $x (rounded) |
+| 0x4a | PWR $x, #0 | Raise $x to power #0, store result in $x |
+| 0x4b | PWR $x, $y | Raise $x to power $y, store result in $x |
+| 0x4c | SQRT $x | Fast square root of $x using Quake III algorithm |
+| 0x4d | FSQRT $x | Floating-point square root of $x (more accurate) |
+| 0x4e | MOD $x, $y | Modulo: $x % $y, store result in $x |
+| 0x4f | MOD $x, #0 | Modulo: $x % #0, store result in $x |
+
+### Details
+
+**Addition & Subtraction**
+- All arithmetic operations update CPU flags
+- Results wrap around (overflow/underflow)
+- INC/DEC are optimized single-register operations
+
+**Multiplication & Division**
+- Results are truncated to 8-bit values
+- Division rounds to nearest integer
+- Overflow flag set if result > 255
+
+**Power Operations**
+- PWR raises to a power (exponentiation)
+- If base or exponent is 0, raises SIGABRT error
+- Uses logarithm to detect overflow before computation
+
+**Square Root**
+- SQRT: Fast inverse square root (Quake III algorithm)
+- FSQRT: More accurate floating-point sqrt
+- Both update zero flag if result is 0
+
+**Modulo**
+- Returns remainder of division
+- Updates flags based on result
+
+</Accordion>
+
+<Accordion title="Subroutine Operations (0x50-0x5F)" icon="function">
+
+| Opcode | Instruction | Description |
+|--------|-------------|-------------|
+| 0x50 | CALL [#0] | Call subroutine at immediate address [#0] |
+| 0x51 | CALL [$x,$y] | Call subroutine at address formed by $x and $y |
+| 0x52 | RET | Return from subroutine |
+
+### Details
+
+**CALL (0x50, 0x51)**
+- Pushes current program counter (return address) onto stack as 16-bit value
+- Jumps to specified address
+- Used to invoke subroutines/functions
+
+**RET (0x52)**
+- Pops 16-bit return address from stack
+- Sets program counter to return address
+- Returns control to caller
+
+</Accordion>
+
+<Accordion title="Memory Operations (0x60-0x6F)" icon="memory">
+
+| Opcode | Instruction | Description |
+|--------|-------------|-------------|
+| 0x60 | STORE [$x,$y], $z | Store value from $z to memory address [$x,$y] |
+| 0x61 | STORE [#0], $x | Store value from $x to immediate memory address [#0] |
+| 0x62 | STORE [$x,$y], #0 | Store immediate value #0 to memory address [$x,$y] |
+| 0x63 | STORE [#0], #1 | Store immediate value #1 to immediate memory address [#0] |
+
+### Details
+
+**STORE Instructions**
+- Write data to vRAM
+- Address can be immediate (16-bit) or formed from two registers
+- Value can be from register or immediate (8-bit)
+
+**Special Memory Regions**
+- Stack: 0xCF00-0xCFFF (256 bytes)
+- Screen: 0xA000+ (for display output)
+
+</Accordion>
+
+<Accordion title="System Operations (0xFD-0xFF)" icon="power-off">
+
+| Opcode | Instruction | Description |
+|--------|-------------|-------------|
+| 0xfd | HALT $x | Halt execution with exit code from $x |
+| 0xfe | HALT #0 | Halt execution with immediate exit code #0 |
+| 0xff | HALT | Halt execution with exit code 0 (success) |
+
+### Details
+
+**HALT Instructions**
+- Stops VM execution
+- Returns exit code to host system
+- Exit code can be from register, immediate value, or default 0
+- Used to terminate programs normally or signal errors
+
+</Accordion>
+
+</AccordionGroup>
+
+## Flag Effects
+
+Most arithmetic and logic operations affect CPU flags. See the [Flags Reference](/reference/flags) for detailed information on how flags are set and used.
+
+## Error Conditions
+
+Certain opcodes can trigger errors:
+- Invalid register access (> 0x07, except 0xff) triggers SIGSEGV
+- PWR with zero base or exponent triggers SIGABRT
+- Unknown opcodes trigger SIGABRT
+
+See [Error Codes](/reference/error-codes) for complete error reference.

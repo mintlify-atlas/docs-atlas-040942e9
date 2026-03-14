@@ -1,0 +1,232 @@
+---
+title: CPU Architecture
+description: Central Processing Unit structure, registers, and execution model
+---
+
+## CPU Structure
+
+The Neodymium VM CPU is defined in `cpu.h` and implements an 8-bit instruction set architecture with register-based operations.
+
+<CodeGroup>
+```cpp cpu.h
+struct CPU
+{
+    private:
+    byte ALWAYS_ZERO;
+    bytes registers;
+    bool zero;      // Indicates if last value is equal to zero
+    bool underflow; // Indicates if last value is under 0 and wrapped to 255
+    bool overflow;  // Indicates if last value is over 255 and wrapped to 0
+
+    public:
+    RAM ram;
+    Stack stack;
+    Screen screen;
+    
+    int tick();
+    int run();
+};
+```
+</CodeGroup>
+
+## Registers
+
+The CPU contains **8 general-purpose registers** plus one special constant register:
+
+### General-Purpose Registers
+
+| Register | Address | Description |
+|----------|---------|-------------|
+| `$a` | `0x00` | General-purpose register A |
+| `$b` | `0x01` | General-purpose register B |
+| `$c` | `0x02` | General-purpose register C |
+| `$d` | `0x03` | General-purpose register D |
+| `$e` | `0x04` | General-purpose register E |
+| `$f` | `0x05` | General-purpose register F |
+| `$g` | `0x06` | General-purpose register G |
+| `$h` | `0x07` | General-purpose register H |
+
+All registers are 8-bit (byte) values that can hold values from 0 to 255.
+
+### ALWAYS_ZERO Register
+
+| Register | Address | Description |
+|----------|---------|-------------|
+| `ALWAYS_ZERO` | `0xFF` | Always reads as zero, useful for address construction |
+
+<Note>
+The `ALWAYS_ZERO` register is implemented as a semi-constant that always returns zero, primarily used for constructing addresses. See `cpu.cpp:14-18`.
+</Note>
+
+<CodeGroup>
+```cpp cpu.cpp
+byte* CPU::get_register_by_address(byte addr)
+{
+    if (addr == 0xff) return &ALWAYS_ZERO;
+    if(addr >= REGISTERS) raise(Errors::SIGSEGV);
+    return &registers[addr];
+};
+```
+</CodeGroup>
+
+## Flag System
+
+The CPU maintains three flags that are updated by arithmetic and comparison operations:
+
+### Zero Flag
+
+- **Set when**: The result of an operation equals zero
+- **Used by**: `JZ` (Jump if Zero), `JNZ` (Jump if Not Zero)
+- **Example**: After `CMP $a, $b`, if `$a == $b`, the zero flag is set
+
+### Overflow Flag
+
+- **Set when**: The result of an operation exceeds 255 (8-bit maximum)
+- **Used by**: `JO` (Jump if Overflow), `JNO` (Jump if Not Overflow)
+- **Example**: `ADD $a, $b` where `$a = 200` and `$b = 100` results in overflow
+
+### Underflow Flag
+
+- **Set when**: The result of an operation is less than 0
+- **Used by**: `JU` (Jump if Underflow), `JNU` (Jump if Not Underflow)
+- **Example**: `SUB $a, $b` where `$a = 50` and `$b = 100` results in underflow
+
+<CodeGroup>
+```cpp cpu.cpp
+void CPU::update_flags_with_number(int64_t num)
+{
+    overflow    = num > 255;
+    zero        = num == 0;
+    underflow   = num < 0; 
+}
+```
+</CodeGroup>
+
+<Warning>
+When overflow or underflow occurs, the value wraps around. For example:
+- `255 + 1 = 0` (overflow)
+- `0 - 1 = 255` (underflow)
+</Warning>
+
+## Execution Cycle
+
+The CPU executes instructions through two main methods:
+
+### tick() Method
+
+Executes a single instruction:
+
+1. **Fetch**: Read the opcode byte from RAM at the current program counter
+2. **Decode**: Match the opcode against the instruction set
+3. **Execute**: Perform the instruction's operation
+4. **Return**: Return `-1` to continue, or an exit code to halt
+
+<CodeGroup>
+```cpp cpu.cpp
+int CPU::tick() {
+    byte opcode = ram.next();
+    
+    switch (opcode) {
+        case 0x00: {return -1;} // NOP
+        case 0x01: { // MOV $x, $y
+            byte* register_x = get_next_as_register();
+            byte* register_y = get_next_as_register();
+            *register_x = *register_y;
+            return -1;
+        }
+        // ... (more opcodes)
+        case 0xff: { // HALT
+            return 0;
+        }
+    }
+}
+```
+</CodeGroup>
+
+### run() Method
+
+Continuously executes instructions until a HALT is encountered:
+
+<CodeGroup>
+```cpp cpu.cpp
+int CPU::run() {
+    while (true) {
+        int res = tick();
+        if (res != -1) {
+            return res;  // HALT encountered
+        }
+        screen.tick();  // Update display
+    }
+}
+```
+</CodeGroup>
+
+## Instruction Categories
+
+The CPU supports several categories of instructions:
+
+<AccordionGroup>
+  <Accordion title="Data Movement">
+    - `MOV`: Move data between registers and memory
+    - `PUSH`/`POP`: Stack operations
+    - `STORE`: Write to memory
+  </Accordion>
+  
+  <Accordion title="Arithmetic">
+    - `ADD`, `SUB`, `MUL`, `DIV`: Basic arithmetic
+    - `INC`, `DEC`: Increment/decrement
+    - `PWR`, `SQRT`, `MOD`: Advanced operations
+  </Accordion>
+  
+  <Accordion title="Logic">
+    - `NOT`: Bitwise NOT
+    - `AND`: Bitwise AND
+  </Accordion>
+  
+  <Accordion title="Control Flow">
+    - `JMP`: Unconditional jump
+    - `JZ`, `JNZ`: Conditional jumps (zero flag)
+    - `JO`, `JNO`: Conditional jumps (overflow flag)
+    - `JU`, `JNU`: Conditional jumps (underflow flag)
+    - `CMP`: Compare (sets flags)
+  </Accordion>
+  
+  <Accordion title="Subroutines">
+    - `CALL`: Call subroutine (pushes return address)
+    - `RET`: Return from subroutine (pops return address)
+  </Accordion>
+  
+  <Accordion title="System">
+    - `NOP`: No operation
+    - `HALT`: Stop execution
+  </Accordion>
+</AccordionGroup>
+
+## Memory Access
+
+The CPU provides several addressing modes for memory access:
+
+### Immediate Addressing
+```asm
+MOV $a, #42      ; Load immediate value 42 into $a
+```
+
+### Direct Addressing
+```asm
+MOV $a, [0x1000] ; Load value from address 0x1000 into $a
+```
+
+### Register Indirect Addressing
+```asm
+MOV $a, [$b,$c]  ; Load from address formed by $b (high) and $c (low)
+```
+
+<Info>
+16-bit addresses are constructed from two 8-bit values. The first register/byte is the high byte, and the second is the low byte.
+</Info>
+
+## See Also
+
+- [Memory Architecture](/architecture/memory) - RAM structure and addressing
+- [Stack Operations](/architecture/stack) - Stack implementation details
+- [Instruction Set Reference](/reference/opcodes) - Complete opcode listing

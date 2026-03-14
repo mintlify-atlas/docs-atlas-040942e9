@@ -1,0 +1,163 @@
+---
+title: 'Registers'
+description: 'Understanding the Neodymium VM register architecture'
+icon: 'microchip'
+---
+
+## Overview
+
+The Neodymium VM provides 8 general-purpose 8-bit registers for data manipulation and computation. Each register can hold a single byte (0-255) and can be used interchangeably in most instructions.
+
+## General-Purpose Registers
+
+The VM has 8 addressable registers named `$a` through `$h`:
+
+<CardGroup cols={2}>
+  <Card title="$a" icon="a">
+    **Address:** `0x00`  
+    General-purpose register A
+  </Card>
+  <Card title="$b" icon="b">
+    **Address:** `0x01`  
+    General-purpose register B
+  </Card>
+  <Card title="$c" icon="c">
+    **Address:** `0x02`  
+    General-purpose register C
+  </Card>
+  <Card title="$d" icon="d">
+    **Address:** `0x03`  
+    General-purpose register D
+  </Card>
+  <Card title="$e" icon="e">
+    **Address:** `0x04`  
+    General-purpose register E
+  </Card>
+  <Card title="$f" icon="f">
+    **Address:** `0x05`  
+    General-purpose register F
+  </Card>
+  <Card title="$g" icon="g">
+    **Address:** `0x06`  
+    General-purpose register G
+  </Card>
+  <Card title="$h" icon="h">
+    **Address:** `0x07`  
+    General-purpose register H
+  </Card>
+</CardGroup>
+
+## Special Registers
+
+### ALWAYS_ZERO Register
+
+The VM includes a special semi-constant register that always reads as zero:
+
+<Info>
+  **ALWAYS_ZERO** (`0xFF`)  
+  This register always returns `0` when read. It's primarily used for address calculations where you need a zero byte, such as when forming 16-bit addresses with one component being zero.
+</Info>
+
+**Example usage:**
+```asm
+; Load from address 0x00AB (high byte = 0x00, low byte = $a)
+MOV $b, 0xAB        ; Put 0xAB in $b
+MOV $c, [0xFF, $b]  ; Load from [0x00AB] using ALWAYS_ZERO as high byte
+```
+
+## CPU Flags
+
+The CPU maintains three status flags that are updated by arithmetic and comparison operations:
+
+<AccordionGroup>
+  <Accordion title="Zero Flag" icon="0">
+    Set to `true` when an operation result equals zero.
+    
+    Used by: `CMP`, `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, arithmetic operations
+    
+    Tested by: `JZ` (jump if zero), `JNZ` (jump if not zero)
+  </Accordion>
+  
+  <Accordion title="Overflow Flag" icon="arrow-up">
+    Set to `true` when an operation result exceeds 255 (the maximum byte value).
+    
+    Used by: Arithmetic operations that can exceed byte range
+    
+    Tested by: `JO` (jump if overflow), `JNO` (jump if not overflow)
+  </Accordion>
+  
+  <Accordion title="Underflow Flag" icon="arrow-down">
+    Set to `true` when an operation result is less than 0 (becomes negative).
+    
+    Used by: Subtraction and comparison operations
+    
+    Tested by: `JU` (jump if underflow), `JNU` (jump if not underflow)
+  </Accordion>
+</AccordionGroup>
+
+## Register Usage Examples
+
+<CodeGroup>
+```asm Basic Register Operations
+; Move immediate value to register
+MOV $a, 42          ; $a = 42
+
+; Copy between registers
+MOV $b, $a          ; $b = $a (both now equal 42)
+
+; Arithmetic with registers
+ADD $a, $b          ; $a = $a + $b
+MUL $c, $d          ; $c = $c * $d
+```
+
+```asm Using ALWAYS_ZERO
+; Form addresses with zero high byte
+MOV $a, 0xF0        ; Low byte
+MOV $b, [0xFF, $a]  ; Read from 0x00F0
+
+; Compare against zero
+CMP $c, 0xFF        ; Compare $c with 0
+JZ [0x0100]         ; Jump if $c equals 0
+```
+
+```asm Flag-Based Branching
+; Check if addition overflows
+MOV $a, 200
+ADD $a, 100         ; Result = 300, sets overflow flag
+JO [0x0200]         ; Jump to overflow handler
+
+; Loop until zero
+MOV $a, 10
+.loop:
+  DEC $a            ; Decrement $a
+  JNZ [.loop]       ; Continue if not zero
+```
+</CodeGroup>
+
+## Register Conventions
+
+<Warning>
+  Neodymium VM does not enforce strict register conventions, but following these guidelines improves code readability:
+</Warning>
+
+- **$a, $b**: Commonly used for function arguments and return values
+- **$c-$f**: General computation and temporary storage
+- **$g, $h**: Often used for address calculation (high/low bytes)
+- **ALWAYS_ZERO**: Reserved for address calculations requiring zero
+
+## Technical Details
+
+All registers are implemented as 8-bit unsigned integers internally. The CPU maintains register state in an array accessible by their byte addresses (source: `cpu.cpp:14-19`):
+
+```cpp
+byte* CPU::get_register_by_address(byte addr)
+{
+    if (addr == 0xff) return &ALWAYS_ZERO;
+    if(addr >= REGISTERS) raise(Errors::SIGSEGV);
+    return &registers[addr];
+}
+```
+
+<Note>
+  Attempting to access a register address beyond `0x07` (except `0xFF` for ALWAYS_ZERO) will trigger a segmentation fault error.
+</Note>

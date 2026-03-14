@@ -1,0 +1,758 @@
+---
+title: 'Programming Examples'
+description: 'Practical examples for Neodymium VM programming'
+icon: 'code'
+---
+
+## Introduction
+
+This page provides practical examples of Neodymium VM assembly programming. Each example includes complete code with step-by-step explanations to help you understand VM concepts and instruction usage.
+
+<Note>
+  All examples use real opcodes from the Neodymium VM. You can run these directly by encoding them to bytecode.
+</Note>
+
+---
+
+## Example 1: Simple Arithmetic
+
+Compute `(10 + 5) * 2` and store the result.
+
+<Tabs>
+  <Tab title="Assembly Code">
+    ```asm
+    ; Calculate (10 + 5) * 2
+    ; Expected result: 30
+    
+    MOV $a, 10          ; Load 10 into $a
+    ADD $a, 5           ; Add 5 to $a (now $a = 15)
+    MUL $a, 2           ; Multiply $a by 2 (now $a = 30)
+    
+    ; Store result to memory at 0x1000
+    STORE [0x1000], $a
+    
+    HALT                ; Exit successfully
+    ```
+  </Tab>
+  
+  <Tab title="Bytecode">
+    ```
+    Address | Opcode | Operands        | Instruction
+    --------|--------|-----------------|------------------
+    0x0000  | 0x02   | 0x00, 0x0A      | MOV $a, 10
+    0x0003  | 0x40   | 0x00, 0x05      | ADD $a, 5
+    0x0006  | 0x46   | 0x00, 0x02      | MUL $a, 2
+    0x0009  | 0x61   | 0x10, 0x00, 0x00| STORE [0x1000], $a
+    0x000D  | 0xFF   |                 | HALT
+    ```
+  </Tab>
+  
+  <Tab title="Explanation">
+    <Steps>
+      <Step title="Initialize Register">
+        `MOV $a, 10` loads the immediate value 10 into register $a using opcode `0x02`.
+      </Step>
+      
+      <Step title="Addition">
+        `ADD $a, 5` adds 5 to $a (opcode `0x40`). The result (15) is stored back in $a. This also sets CPU flags: zero=false, overflow=false.
+      </Step>
+      
+      <Step title="Multiplication">
+        `MUL $a, 2` multiplies $a by 2 (opcode `0x46`). The result (30) fits in a byte, so no overflow occurs.
+      </Step>
+      
+      <Step title="Store Result">
+        `STORE [0x1000], $a` writes the value in $a (30) to memory address 0x1000 using opcode `0x61`.
+      </Step>
+      
+      <Step title="Halt">
+        `HALT` stops execution with exit code 0 (opcode `0xFF`).
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+---
+
+## Example 2: Using the Stack
+
+Demonstrate stack operations with multiple values.
+
+<Tabs>
+  <Tab title="Assembly Code">
+    ```asm
+    ; Push three values, then pop in reverse order
+    
+    MOV $a, 10
+    PUSH $a             ; Push 10
+    
+    MOV $b, 20
+    PUSH $b             ; Push 20
+    
+    PUSH 30             ; Push immediate 30
+    
+    ; Now pop them (reverse order)
+    POP $c              ; $c = 30
+    POP $d              ; $d = 20
+    POP $e              ; $e = 10
+    
+    ; Store results
+    STORE [0x2000], $c  ; Memory[0x2000] = 30
+    STORE [0x2001], $d  ; Memory[0x2001] = 20
+    STORE [0x2002], $e  ; Memory[0x2002] = 10
+    
+    HALT
+    ```
+  </Tab>
+  
+  <Tab title="Stack Visualization">
+    ```
+    Initial Stack (0xCF00-0xCFFF):
+    [empty]
+    
+    After PUSH $a (10):
+    Top → [10]
+    
+    After PUSH $b (20):
+    Top → [20]
+          [10]
+    
+    After PUSH 30:
+    Top → [30]
+          [20]
+          [10]
+    
+    After POP $c:
+    Top → [20]    ($c = 30)
+          [10]
+    
+    After POP $d:
+    Top → [10]    ($d = 20)
+    
+    After POP $e:
+    [empty]       ($e = 10)
+    ```
+  </Tab>
+  
+  <Tab title="Explanation">
+    <Steps>
+      <Step title="Push Values">
+        Values are pushed onto the stack in order: 10, 20, 30. The stack grows downward from 0xCFFF toward 0xCF00.
+      </Step>
+      
+      <Step title="LIFO Order">
+        Stack operates Last-In-First-Out (LIFO). When we pop, we get values in reverse order: 30, 20, 10.
+      </Step>
+      
+      <Step title="Stack Opcodes">
+        - `PUSH $x` uses opcode `0x30`
+        - `PUSH #0` uses opcode `0x31`
+        - `POP $x` uses opcode `0x32`
+      </Step>
+      
+      <Step title="Memory Layout">
+        The stack region (0xCF00-0xCFFF) has 256 bytes. Each PUSH consumes 1 byte, so you can safely push up to 256 values.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+---
+
+## Example 3: Conditional Branching
+
+Compare two numbers and branch based on the result.
+
+<Tabs>
+  <Tab title="Assembly Code">
+    ```asm
+    ; Compare $a and $b, jump to different handlers
+    
+    MOV $a, 42
+    MOV $b, 42
+    
+    CMP $a, $b          ; Compare $a with $b
+    JZ [equal]          ; If equal (zero flag set), jump
+    
+    ; Not equal path
+    MOV $c, 0xFF        ; Mark as not equal
+    JMP [done]
+    
+    equal:
+    MOV $c, 0x00        ; Mark as equal
+    
+    done:
+    STORE [0x3000], $c  ; Store result
+    HALT
+    ```
+  </Tab>
+  
+  <Tab title="Flow Diagram">
+    ```
+    START
+      |
+      v
+    MOV $a, 42
+    MOV $b, 42
+      |
+      v
+    CMP $a, $b
+      |
+      v
+    JZ [equal]?
+      /     \
+    No       Yes
+     |        |
+     v        v
+    $c=0xFF  $c=0x00
+     |        |
+     +---+----+
+         |
+         v
+      STORE $c
+         |
+         v
+       HALT
+    ```
+  </Tab>
+  
+  <Tab title="Explanation">
+    <Steps>
+      <Step title="Comparison">
+        `CMP $a, $b` (opcode `0x23`) subtracts $b from $a without storing the result. It only updates flags:
+        - If $a == $b: zero flag = true
+        - If $a < $b: underflow flag = true
+        - If $a > $b (and result exceeds 255): overflow flag = true
+      </Step>
+      
+      <Step title="Conditional Jump">
+        `JZ [equal]` (opcode `0x24`) checks the zero flag. If true, it jumps to the "equal" label. Otherwise, execution continues to the next instruction.
+      </Step>
+      
+      <Step title="Different Paths">
+        - **Equal path:** Sets $c to 0x00
+        - **Not equal path:** Sets $c to 0xFF, then jumps to "done"
+      </Step>
+      
+      <Step title="Result">
+        Since $a and $b both equal 42, the zero flag is set, and the program takes the "equal" path, storing 0x00 to memory.
+      </Step>
+    </Steps>
+    
+    <Info>
+      Other conditional jumps include:
+      - `JNZ`: Jump if not zero
+      - `JU`: Jump if underflow (a < b)
+      - `JO`: Jump if overflow (a + b > 255)
+    </Info>
+  </Tab>
+</Tabs>
+
+---
+
+## Example 4: Subroutine Calls
+
+Implement a simple function that doubles a number.
+
+<Tabs>
+  <Tab title="Assembly Code">
+    ```asm
+    ; Main program
+    main:
+        MOV $a, 21          ; Input value
+        CALL [double]       ; Call the double function
+        STORE [0x4000], $a  ; Store result (42)
+        HALT
+    
+    ; Function: double
+    ; Input: $a
+    ; Output: $a = $a * 2
+    double:
+        MUL $a, 2           ; Double the value
+        RET                 ; Return to caller
+    ```
+  </Tab>
+  
+  <Tab title="Call Stack">
+    ```
+    Before CALL:
+    PC = 0x0003
+    Stack: [empty]
+    
+    During CALL [double]:
+    1. Push return address (0x0006) onto stack as 2 bytes
+    2. Set PC = address of "double" label
+    
+    Stack after CALL:
+    Top → [0x00]  (high byte of return address)
+          [0x06]  (low byte of return address)
+    
+    During RET:
+    1. Pop 2 bytes from stack → 0x0006
+    2. Set PC = 0x0006
+    
+    Stack after RET:
+    [empty]
+    
+    Execution continues at 0x0006 (STORE instruction)
+    ```
+  </Tab>
+  
+  <Tab title="Explanation">
+    <Steps>
+      <Step title="Call Instruction">
+        `CALL [double]` (opcode `0x50`) performs two operations:
+        1. Pushes the return address (PC + instruction_size) onto the stack as a 16-bit value (2 bytes)
+        2. Jumps to the target address
+      </Step>
+      
+      <Step title="Function Execution">
+        The "double" function executes `MUL $a, 2`, modifying the value in $a. Since we're using the same register, the result is automatically available to the caller.
+      </Step>
+      
+      <Step title="Return">
+        `RET` (opcode `0x52`) pops the 16-bit return address from the stack and jumps to it, continuing execution after the CALL.
+      </Step>
+      
+      <Step title="Stack Management">
+        CALL pushes 2 bytes (16-bit address), and RET pops 2 bytes. Always ensure your function preserves this balance, or the return address will be corrupted.
+      </Step>
+    </Steps>
+    
+    <Warning>
+      If your function needs to preserve register values, push them onto the stack at the start and pop them before RET:
+      ```asm
+      function:
+          PUSH $b         ; Save $b
+          ; ... function code ...
+          POP $b          ; Restore $b
+          RET
+      ```
+    </Warning>
+  </Tab>
+</Tabs>
+
+---
+
+## Example 5: Writing to Screen Memory
+
+Draw a red pixel in the top-left corner of the screen.
+
+<Tabs>
+  <Tab title="Assembly Code">
+    ```asm
+    ; Draw a red pixel at position (0, 0)
+    ; Screen framebuffer starts at 0xA000
+    ; Pixel format: RGB (3 bytes per pixel)
+    
+    ; Pixel (0,0) is at address 0xA000
+    ; R at 0xA000, G at 0xA001, B at 0xA002
+    
+    MOV $a, 255         ; Red component = 255
+    STORE [0xA000], $a  ; Write red
+    
+    MOV $a, 0           ; Green component = 0
+    STORE [0xA001], $a  ; Write green
+    
+    STORE [0xA002], $a  ; Write blue (still 0)
+    
+    HALT
+    ```
+  </Tab>
+  
+  <Tab title="Multiple Pixels">
+    ```asm
+    ; Draw a white pixel at (1, 0) using register-indirect addressing
+    
+    ; Calculate address: 0xA000 + ((y * 16) + x) * 3
+    ; For (1, 0): 0xA000 + ((0 * 16) + 1) * 3 = 0xA003
+    
+    MOV $g, 0xA0        ; High byte of base address
+    MOV $h, 0x03        ; Low byte (offset for pixel 1)
+    
+    MOV $a, 255         ; White = (255, 255, 255)
+    
+    STORE [$g, $h], $a  ; R = 255
+    INC $h              ; Move to next byte
+    STORE [$g, $h], $a  ; G = 255
+    INC $h
+    STORE [$g, $h], $a  ; B = 255
+    
+    HALT
+    ```
+  </Tab>
+  
+  <Tab title="Explanation">
+    <Steps>
+      <Step title="Framebuffer Layout">
+        The screen framebuffer occupies 0xA000-0xA2FF (768 bytes). It stores a 16×16 pixel RGB image:
+        - 16 width × 16 height = 256 pixels
+        - 3 bytes per pixel (R, G, B) = 768 bytes total
+      </Step>
+      
+      <Step title="Pixel Address Formula">
+        To access pixel at coordinates (x, y):
+        ```
+        address = 0xA000 + ((y × 16) + x) × 3
+        ```
+        
+        For pixel (0, 0): `0xA000 + 0 = 0xA000`  
+        For pixel (1, 0): `0xA000 + 3 = 0xA003`  
+        For pixel (0, 1): `0xA000 + 48 = 0xA030`
+      </Step>
+      
+      <Step title="RGB Components">
+        Each pixel requires writing 3 consecutive bytes:
+        1. Red component (0-255)
+        2. Green component (0-255)
+        3. Blue component (0-255)
+      </Step>
+      
+      <Step title="Display Update">
+        The screen updates automatically every CPU tick. Changes to framebuffer memory are immediately visible.
+      </Step>
+    </Steps>
+    
+    <Note>
+      The screen window is 16×16 pixels but displayed at 32× zoom (512×512 on screen) for visibility.
+    </Note>
+  </Tab>
+</Tabs>
+
+---
+
+## Example 6: Loop with Counter
+
+Implement a countdown loop from 10 to 0.
+
+<Tabs>
+  <Tab title="Assembly Code">
+    ```asm
+    ; Count down from 10 to 0
+    
+    MOV $a, 10          ; Initialize counter
+    MOV $b, 0           ; Memory offset for storing values
+    
+    loop:
+        ; Store current counter value
+        MOV $g, 0x50    ; High byte of base address 0x5000
+        MOV $h, 0x00
+        ADD $h, $b      ; Add offset
+        STORE [$g, $h], $a
+        
+        ; Increment offset
+        INC $b
+        
+        ; Decrement counter
+        DEC $a
+        
+        ; Check if counter is zero
+        CMP $a, 0
+        JNZ [loop]      ; If not zero, continue loop
+    
+    ; Loop finished
+    HALT
+    ```
+  </Tab>
+  
+  <Tab title="Memory Result">
+    ```
+    After execution, memory 0x5000-0x500A contains:
+    
+    Address | Value | Explanation
+    --------|-------|------------------
+    0x5000  | 10    | First iteration
+    0x5001  | 9     | Second iteration
+    0x5002  | 8     | Third iteration
+    0x5003  | 7     | ...
+    0x5004  | 6
+    0x5005  | 5
+    0x5006  | 4
+    0x5007  | 3
+    0x5008  | 2
+    0x5009  | 1
+    0x500A  | 0     | Last iteration
+    ```
+  </Tab>
+  
+  <Tab title="Explanation">
+    <Steps>
+      <Step title="Initialization">
+        $a holds the counter (10), $b holds the memory offset (0).
+      </Step>
+      
+      <Step title="Store Current Value">
+        Each iteration stores $a to address 0x5000 + $b using register-indirect addressing.
+      </Step>
+      
+      <Step title="Update Counters">
+        - `INC $b` increments the memory offset
+        - `DEC $a` decrements the counter
+      </Step>
+      
+      <Step title="Loop Condition">
+        `CMP $a, 0` followed by `JNZ [loop]` creates a loop that continues while $a is not zero. When $a reaches 0, the loop exits.
+      </Step>
+    </Steps>
+    
+    <Info>
+      This loop executes 11 times (for values 10, 9, 8, ..., 1, 0). If you want to exclude zero, use `JZ` to exit before storing:
+      ```asm
+      loop:
+          CMP $a, 0
+          JZ [done]
+          ; ... store and process ...
+      ```
+    </Info>
+  </Tab>
+</Tabs>
+
+---
+
+## Example 7: Array Summation
+
+Sum an array of values stored in memory.
+
+<Tabs>
+  <Tab title="Assembly Code">
+    ```asm
+    ; Sum array of 5 values at 0x6000-0x6004
+    ; Array: [10, 20, 30, 40, 50]
+    ; Expected sum: 150
+    
+    ; Initialize array (in practice, this might be pre-loaded)
+    STORE [0x6000], 10
+    STORE [0x6001], 20
+    STORE [0x6002], 30
+    STORE [0x6003], 40
+    STORE [0x6004], 50
+    
+    ; Sum the array
+    MOV $a, 0           ; Accumulator (sum)
+    MOV $b, 0           ; Index counter
+    MOV $c, 5           ; Array length
+    
+    sum_loop:
+        ; Load array[index]
+        MOV $g, 0x60    ; High byte of array base
+        MOV $h, 0x00
+        ADD $h, $b      ; Add index
+        MOV $d, [$g, $h]
+        
+        ; Add to accumulator
+        ADD $a, $d
+        
+        ; Increment index
+        INC $b
+        
+        ; Check if done
+        CMP $b, $c
+        JNZ [sum_loop]
+    
+    ; Store result
+    STORE [0x7000], $a  ; Sum = 150
+    HALT
+    ```
+  </Tab>
+  
+  <Tab title="Step-by-Step">
+    ```
+    Iteration | Index | array[i] | Accumulator
+    ----------|-------|----------|-------------
+    Initial   | 0     | -        | 0
+    1         | 0     | 10       | 10
+    2         | 1     | 20       | 30
+    3         | 2     | 30       | 60
+    4         | 3     | 40       | 100
+    5         | 4     | 50       | 150
+    Done      | 5     | -        | 150
+    ```
+  </Tab>
+  
+  <Tab title="Explanation">
+    <Steps>
+      <Step title="Array Initialization">
+        Five `STORE` instructions write the array values to consecutive memory addresses starting at 0x6000.
+      </Step>
+      
+      <Step title="Loop Variables">
+        - `$a`: Accumulator (running sum)
+        - `$b`: Current index (0-4)
+        - `$c`: Array length (5)
+        - `$d`: Temporary register for current array element
+      </Step>
+      
+      <Step title="Array Access">
+        Each iteration calculates the address `0x6000 + index` using registers $g (high) and $h (low), then loads the value into $d.
+      </Step>
+      
+      <Step title="Accumulation">
+        `ADD $a, $d` adds the current element to the running sum.
+      </Step>
+      
+      <Step title="Loop Termination">
+        `CMP $b, $c` compares the index with the array length. When they're equal, the zero flag is set, and `JNZ` doesn't jump (loop exits).
+      </Step>
+    </Steps>
+    
+    <Warning>
+      This example doesn't check for overflow. If the sum exceeds 255, it will wrap around. For larger sums, you'd need multi-byte arithmetic.
+    </Warning>
+  </Tab>
+</Tabs>
+
+---
+
+## Example 8: Nested Subroutines
+
+Demonstrate nested function calls with stack management.
+
+<Tabs>
+  <Tab title="Assembly Code">
+    ```asm
+    ; Main program
+    main:
+        MOV $a, 5
+        CALL [triple]       ; triple(5) = 15
+        STORE [0x8000], $a
+        HALT
+    
+    ; Function: triple (calls double)
+    ; Input: $a
+    ; Output: $a = $a * 3
+    triple:
+        PUSH $b             ; Save $b
+        MOV $b, $a          ; Backup input
+        CALL [double]       ; $a = $a * 2
+        ADD $a, $b          ; $a = $a + original = 3x
+        POP $b              ; Restore $b
+        RET
+    
+    ; Function: double
+    ; Input: $a
+    ; Output: $a = $a * 2
+    double:
+        MUL $a, 2
+        RET
+    ```
+  </Tab>
+  
+  <Tab title="Call Stack Trace">
+    ```
+    Step 1: main calls triple
+    Stack: [return_addr_1_high, return_addr_1_low]
+    
+    Step 2: triple saves $b
+    Stack: [return_addr_1_high, return_addr_1_low, $b_value]
+    
+    Step 3: triple calls double
+    Stack: [return_addr_1_high, return_addr_1_low, $b_value, 
+            return_addr_2_high, return_addr_2_low]
+    
+    Step 4: double returns
+    Stack: [return_addr_1_high, return_addr_1_low, $b_value]
+    
+    Step 5: triple restores $b
+    Stack: [return_addr_1_high, return_addr_1_low]
+    
+    Step 6: triple returns
+    Stack: [empty]
+    ```
+  </Tab>
+  
+  <Tab title="Explanation">
+    <Steps>
+      <Step title="Nested Calls">
+        The `triple` function calls `double`, creating a nested call stack. Each `CALL` pushes a return address, and each `RET` pops it.
+      </Step>
+      
+      <Step title="Register Preservation">
+        `triple` uses `PUSH $b` and `POP $b` to save/restore the register before/after using it. This ensures the caller's value isn't corrupted.
+      </Step>
+      
+      <Step title="Execution Flow">
+        1. main: $a = 5
+        2. triple: saves $b, backs up $a (5) to $b
+        3. double: $a = 5 * 2 = 10
+        4. triple: $a = 10 + 5 = 15
+        5. triple: restores $b, returns
+        6. main: stores 15 to memory
+      </Step>
+      
+      <Step title="Stack Depth">
+        At maximum depth (inside `double`), the stack contains:
+        - 2 bytes for main's return address
+        - 1 byte for saved $b
+        - 2 bytes for triple's return address
+        Total: 5 bytes
+      </Step>
+    </Steps>
+    
+    <Note>
+      The 256-byte stack can handle deep nesting. Each function call uses 2 bytes plus any saved registers. Monitor stack usage in recursive algorithms.
+    </Note>
+  </Tab>
+</Tabs>
+
+---
+
+## Tips and Best Practices
+
+<AccordionGroup>
+  <Accordion title="Register Allocation" icon="microchip">
+    - Use `$a` and `$b` for primary computations and function arguments
+    - Reserve `$g` and `$h` for address calculations (high/low bytes)
+    - Use `$c-$f` for temporary storage
+    - Always use `0xFF` (ALWAYS_ZERO) instead of manually loading zero into a register for addresses
+  </Accordion>
+  
+  <Accordion title="Memory Management" icon="memory">
+    - Keep program code in lower addresses (0x0000-0x9FFF)
+    - Use 0x1000-0x9FFF for global variables and data
+    - Never write to stack region (0xCF00-0xCFFF) directly—use PUSH/POP
+    - Remember screen framebuffer is at 0xA000-0xA2FF (768 bytes)
+  </Accordion>
+  
+  <Accordion title="Control Flow" icon="diagram-project">
+    - Always use `CMP` before conditional jumps
+    - Remember flag behavior: `CMP $a, $b` subtracts $b from $a
+    - Use `JZ` for equality, `JU` for less-than, `JO` for overflow detection
+    - Keep loops tight—avoid unnecessary instructions inside loops
+  </Accordion>
+  
+  <Accordion title="Function Conventions" icon="function">
+    - Use `CALL`/`RET` for subroutines (automatic return address management)
+    - Save registers you'll modify using `PUSH`/`POP`
+    - Pass arguments in registers (typically `$a`, `$b`)
+    - Return values in `$a`
+  </Accordion>
+  
+  <Accordion title="Debugging" icon="bug">
+    - Use `HALT` with exit codes to signal different outcomes: `HALT 0` (success), `HALT 1` (error)
+    - Store intermediate values to memory for inspection
+    - Use `NOP` for breakpoint placeholders
+    - Remember arithmetic operations set flags—check for overflow/underflow
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Instruction Set Reference" icon="book" href="/programming/instruction-set">
+    Complete instruction documentation
+  </Card>
+  
+  <Card title="Memory Layout" icon="memory" href="/programming/memory-layout">
+    Understand address space organization
+  </Card>
+  
+  <Card title="Register Guide" icon="microchip" href="/programming/registers">
+    Deep dive into registers and flags
+  </Card>
+  
+  <Card title="Opcode Table" icon="table" href="/reference/opcodes">
+    Quick reference for all opcodes
+  </Card>
+</CardGroup>

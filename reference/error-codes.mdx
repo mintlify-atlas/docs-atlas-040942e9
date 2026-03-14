@@ -1,0 +1,332 @@
+---
+title: Error Codes
+description: Complete reference for Neodymium VM error codes and signals
+---
+
+The Neodymium VM uses a dual error code system combining POSIX signals (1-128) and custom application errors (129+). When an error occurs, the VM terminates with a specific exit code.
+
+## Error Code System
+
+Error codes are defined in `errors.h` using an enum:
+
+```cpp
+enum struct Errors : byte {
+    // POSIX Signals (1-128)
+    SIGABRT             =   6,
+    SIGKILL             =   9,
+    SIGSEGV             =   11,
+    // Non-signal errors (129+)
+    OS_UNSUPPORTED      =   NON_SIGNAL_PREFIX + 1,  // 129
+    NO_FILE_ARG         =   NON_SIGNAL_PREFIX + 2,  // 130
+    FILE_NOT_FOUND      =   NON_SIGNAL_PREFIX + 3,  // 131
+    FILE_TOO_BIG        =   NON_SIGNAL_PREFIX + 4,  // 132
+    ERROR_OPENING_FILE  =   NON_SIGNAL_PREFIX + 5,  // 133
+};
+```
+
+<Note>
+The `NON_SIGNAL_PREFIX` constant is set to 128, separating POSIX signal codes from application-specific errors.
+</Note>
+
+## Signal Errors (Runtime)
+
+These errors occur during VM execution due to invalid operations:
+
+<AccordionGroup>
+
+<Accordion title="SIGABRT (6) - Abnormal Termination" icon="circle-exclamation">
+
+**Exit Code:** 134 (128 + 6)
+
+**Description:** Abnormal termination.
+
+**When it occurs:**
+- Unknown/invalid opcode encountered
+- Power operation (PWR) with zero base or exponent
+- Other illegal operations that cannot continue
+
+**Example triggers:**
+```cpp
+// From cpu.cpp:347
+if (immediate == 0 || *register_x == 0) {
+    raise(Errors::SIGABRT);
+}
+```
+
+```cpp
+// From cpu.cpp:514
+raise(Errors::SIGABRT);  // Unknown opcode
+```
+
+**How to prevent:**
+- Only use valid opcodes (0x00-0x6F, 0xFD-0xFF)
+- Ensure PWR operations have non-zero base and exponent
+- Validate bytecode before execution
+
+</Accordion>
+
+<Accordion title="SIGSEGV (11) - Segmentation Fault" icon="triangle-exclamation">
+
+**Exit Code:** 139 (128 + 11)
+
+**Description:** Segmentation fault.
+
+**When it occurs:**
+- Attempting to access invalid register (address >= 8 and != 0xFF)
+- Register index out of bounds
+
+**Example trigger:**
+```cpp
+// From cpu.cpp:17
+if(addr >= REGISTERS) raise(Errors::SIGSEGV);
+// REGISTERS = 8, so valid addresses are 0x00-0x07 or 0xFF
+```
+
+**Valid register addresses:**
+- `0x00` through `0x07` - Registers $a through $h
+- `0xFF` - Always Zero register (special)
+
+**How to prevent:**
+- Only use register addresses 0x00-0x07 or 0xFF
+- Validate register operands in assembler
+- Check bytecode for invalid register references
+
+</Accordion>
+
+<Accordion title="SIGKILL (9) - Signal Killed" icon="skull">
+
+**Exit Code:** 137 (128 + 9)
+
+**Description:** Signal killed.
+
+**When it occurs:**
+- Reserved for future use
+- Currently not raised by VM code
+- May be used for external termination
+
+</Accordion>
+
+</AccordionGroup>
+
+## File/OS Errors (Startup)
+
+These errors occur before VM execution begins, during file loading:
+
+<AccordionGroup>
+
+<Accordion title="OS_UNSUPPORTED (129) - Unsupported Operating System" icon="computer">
+
+**Exit Code:** 1 (129 - 128)
+
+**Description:** Your OS isn't supported.
+
+**When it occurs:**
+- Running on an unsupported operating system
+- Platform-specific features unavailable
+
+**Currently supported:**
+- UNIX-based systems (Linux, macOS)
+- Windows support may be limited (see `cpu.cpp:6` comment)
+
+**How to resolve:**
+- Use a UNIX-based operating system
+- Check for platform-specific build requirements
+
+</Accordion>
+
+<Accordion title="NO_FILE_ARG (130) - No File Argument" icon="file-slash">
+
+**Exit Code:** 2 (130 - 128)
+
+**Description:** No file argument provided.
+
+**When it occurs:**
+- VM invoked without specifying a bytecode file
+- Missing required command-line argument
+
+**Example:**
+```bash
+# Wrong - no file specified
+./neodymium
+
+# Correct - file specified
+./neodymium program.nvm
+```
+
+**How to resolve:**
+- Always provide a bytecode file path as argument
+- Check command-line invocation syntax
+
+</Accordion>
+
+<Accordion title="FILE_NOT_FOUND (131) - File Not Found" icon="magnifying-glass">
+
+**Exit Code:** 3 (131 - 128)
+
+**Description:** File not found.
+
+**When it occurs:**
+- Specified bytecode file doesn't exist
+- Incorrect file path provided
+- Insufficient permissions to access file
+
+**How to resolve:**
+- Verify file path is correct
+- Check file exists in specified location
+- Ensure read permissions on file
+
+</Accordion>
+
+<Accordion title="FILE_TOO_BIG (132) - File Too Large" icon="file-circle-exclamation">
+
+**Exit Code:** 4 (132 - 128)
+
+**Description:** File too big.
+
+**When it occurs:**
+- Bytecode file exceeds maximum size
+- File larger than available vRAM (64KB)
+
+**Memory constraints:**
+- Maximum vRAM: 64KB (0x0000-0xFFFF)
+- Stack: 256 bytes (0xCF00-0xCFFF)
+- Screen: Starting at 0xA000
+- Available for program: ~40KB
+
+**How to resolve:**
+- Reduce program size
+- Optimize bytecode
+- Split into multiple modules loaded dynamically
+
+</Accordion>
+
+<Accordion title="ERROR_OPENING_FILE (133) - File Open Error" icon="folder-open">
+
+**Exit Code:** 5 (133 - 128)
+
+**Description:** Error opening file.
+
+**When it occurs:**
+- File exists but cannot be opened
+- Permission denied
+- File locked by another process
+- Corrupted file system
+
+**How to resolve:**
+- Check file permissions (should be readable)
+- Ensure file is not locked
+- Verify file system integrity
+- Try copying file to new location
+
+</Accordion>
+
+</AccordionGroup>
+
+## Error Handling Implementation
+
+The `raise()` function handles all errors:
+
+```cpp
+void raise(Errors code) {
+    fprintf(stderr, errors_dict.at(code)); 
+    printf("\n");
+
+    byte scode = static_cast<byte>(code);
+
+    if (scode <= 128) {
+        // POSIX signal: add 128 to exit code
+        exit(128 + scode);
+    }
+    
+    // Non-signal error: subtract 128 from code
+    exit(scode - 128);
+}
+```
+
+### Exit Code Calculation
+
+<Tabs>
+  <Tab title="Signal Errors">
+    For POSIX signals (codes 1-128):
+    
+    **Exit Code = 128 + Signal Number**
+
+    Examples:
+    - SIGABRT (6) → Exit code 134
+    - SIGSEGV (11) → Exit code 139
+    - SIGKILL (9) → Exit code 137
+  </Tab>
+
+  <Tab title="Application Errors">
+    For application errors (codes 129+):
+    
+    **Exit Code = Error Code - 128**
+
+    Examples:
+    - OS_UNSUPPORTED (129) → Exit code 1
+    - NO_FILE_ARG (130) → Exit code 2
+    - FILE_NOT_FOUND (131) → Exit code 3
+    - FILE_TOO_BIG (132) → Exit code 4
+    - ERROR_OPENING_FILE (133) → Exit code 5
+  </Tab>
+</Tabs>
+
+## Error Messages
+
+All error messages are defined in `errors.cpp`:
+
+```cpp
+const std::unordered_map<Errors, const char*> errors_dict = {
+    {Errors::SIGABRT, "Abnormal termination."},
+    {Errors::SIGSEGV, "Segmentation fault."},
+    {Errors::SIGKILL, "Signal killed."},
+    {Errors::OS_UNSUPPORTED, "Your OS isn't supported."},
+    {Errors::NO_FILE_ARG, "No file argument provided."},
+    {Errors::FILE_NOT_FOUND, "File not found."},
+    {Errors::FILE_TOO_BIG, "File too big."},
+    {Errors::ERROR_OPENING_FILE, "Error opening file."},
+};
+```
+
+Error messages are printed to `stderr` before the VM exits.
+
+## Debugging Tips
+
+<Steps>
+  <Step title="Check Exit Code">
+    Examine the VM's exit code to identify the error:
+    ```bash
+    ./neodymium program.nvm
+    echo $?  # Print exit code
+    ```
+  </Step>
+
+  <Step title="Read Error Message">
+    Error messages are printed to stderr:
+    ```bash
+    ./neodymium program.nvm 2>&1 | tee error.log
+    ```
+  </Step>
+
+  <Step title="Identify Error Type">
+    - Exit codes 1-5: File/OS errors (check file and system)
+    - Exit codes 134+: Runtime errors (check bytecode)
+  </Step>
+
+  <Step title="Fix the Issue">
+    - For file errors: verify file exists and is accessible
+    - For SIGSEGV: check register addresses in bytecode
+    - For SIGABRT: validate opcodes and operands
+  </Step>
+</Steps>
+
+## Common Error Scenarios
+
+| Symptom | Likely Error | Solution |
+|---------|--------------|----------|
+| VM won't start, missing file | NO_FILE_ARG (130) | Provide bytecode file as argument |
+| VM won't start, file exists | FILE_NOT_FOUND (131) or ERROR_OPENING_FILE (133) | Check file path and permissions |
+| Crashes on specific instruction | SIGSEGV (11) | Validate register addresses (0x00-0x07, 0xFF) |
+| Crashes on power operation | SIGABRT (6) | Ensure base and exponent are non-zero |
+| Crashes on unknown instruction | SIGABRT (6) | Use only valid opcodes |
+| File loads but won't run | FILE_TOO_BIG (132) | Reduce program size to < 64KB |

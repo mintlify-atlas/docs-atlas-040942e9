@@ -1,0 +1,440 @@
+---
+title: Display Architecture
+description: Screen system, framebuffer format, and GLFW rendering implementation
+---
+
+## Display Overview
+
+The Neodymium VM includes a **16×16 pixel display** rendered using GLFW. The screen is memory-mapped, allowing programs to draw by writing directly to RAM.
+
+<CodeGroup>
+```cpp screen.h
+#define HEIGHT  16
+#define WIDTH   16
+#define ZOOM    32  // Pixels are zoomed 32x for visibility
+
+struct Screen {
+    private:
+    bytes framebuffer;  // Pointer to memory-mapped framebuffer
+    GLFWwindow* window;
+
+    public:
+    Screen(byte* addr_ptr);
+    void tick();
+    void terminate();
+};
+```
+</CodeGroup>
+
+## Screen Specifications
+
+| Property | Value |
+|----------|-------|
+| **Resolution** | 16×16 pixels |
+| **Total Pixels** | 256 pixels |
+| **Color Format** | RGB (3 bytes per pixel) |
+| **Framebuffer Size** | 768 bytes (256 × 3) |
+| **Memory Address** | `0xA000` |
+| **Window Size** | 512×512 pixels (32x zoom) |
+
+## Memory-Mapped Framebuffer
+
+The display framebuffer is located at RAM address `0xA000`:
+
+<CodeGroup>
+```cpp cpu.cpp
+#define SCREEN_ADDRESS 0xa000
+
+CPU::CPU()
+: screen(Screen(&(ram.memory[SCREEN_ADDRESS])))
+{
+    // Screen is initialized with a pointer to RAM[0xA000]
+}
+```
+</CodeGroup>
+
+### Framebuffer Layout
+
+Each pixel is represented by **3 consecutive bytes** (RGB):
+
+```
+Address    | Pixel | Component | Description
+-----------|-------|-----------|-------------
+0xA000     | (0,0) | Red       | Top-left pixel, R channel
+0xA001     | (0,0) | Green     | Top-left pixel, G channel
+0xA002     | (0,0) | Blue      | Top-left pixel, B channel
+0xA003     | (1,0) | Red       | Second pixel, R channel
+0xA004     | (1,0) | Green     | Second pixel, G channel
+0xA005     | (1,0) | Blue      | Second pixel, B channel
+...        | ...   | ...       | ...
+0xA2FD     | (15,15) | Red     | Bottom-right pixel, R channel
+0xA2FE     | (15,15) | Green   | Bottom-right pixel, G channel
+0xA2FF     | (15,15) | Blue    | Bottom-right pixel, B channel
+```
+
+### Pixel Address Calculation
+
+To calculate the address for pixel (x, y):
+
+```
+base_address = 0xA000 + (y * 16 + x) * 3
+
+red_address   = base_address + 0
+green_address = base_address + 1
+blue_address  = base_address + 2
+```
+
+**Example**: Pixel at (5, 3)
+```
+offset = (3 * 16 + 5) * 3 = 53 * 3 = 159 = 0x9F
+red   = 0xA000 + 0x9F = 0xA09F
+green = 0xA000 + 0xA0 = 0xA0A0
+blue  = 0xA000 + 0xA1 = 0xA0A1
+```
+
+<Info>
+Pixels are stored in **row-major order**: row 0 (pixels 0-15), then row 1 (pixels 16-31), etc.
+</Info>
+
+## Drawing to the Screen
+
+Programs draw by writing to the framebuffer memory:
+
+### Example: Set Pixel to Red
+
+```asm
+; Set pixel (0,0) to red (255, 0, 0)
+MOV $a, #255
+STORE [0xA000], $a  ; Red = 255
+MOV $a, #0
+STORE [0xA001], $a  ; Green = 0
+STORE [0xA002], $a  ; Blue = 0
+```
+
+### Example: Set Pixel to White
+
+```asm
+; Set pixel (1,0) to white (255, 255, 255)
+MOV $a, #255
+STORE [0xA003], $a  ; Red = 255
+STORE [0xA004], $a  ; Green = 255
+STORE [0xA005], $a  ; Blue = 255
+```
+
+### Example: Set Pixel Using Coordinates
+
+```asm
+; Set pixel (x=5, y=3) to green
+; Calculate: offset = (3 * 16 + 5) * 3 = 159
+
+; Calculate y * 16
+MOV $a, #3          ; y = 3
+MOV $b, #16
+MUL $a, $b          ; $a = 48
+
+; Add x
+MOV $b, #5          ; x = 5  
+ADD $a, $b          ; $a = 53
+
+; Multiply by 3
+MOV $b, #3
+MUL $a, $b          ; $a = 159
+
+; Add base address (0xA000)
+; Since we only have 8-bit registers, split into high/low
+MOV $c, #0xA0       ; High byte
+; $a already contains low byte (159 = 0x9F)
+
+; Write green color (0, 255, 0)
+MOV $d, #0
+STORE [$c,$a], $d   ; Red = 0 at 0xA09F
+
+INC $a              ; Next byte
+MOV $d, #255  
+STORE [$c,$a], $d   ; Green = 255 at 0xA0A0
+
+INC $a              ; Next byte
+MOV $d, #0
+STORE [$c,$a], $d   ; Blue = 0 at 0xA0A1
+```
+
+<Note>
+The screen automatically updates when the framebuffer changes. There's no need to call a "refresh" function.
+</Note>
+
+## GLFW Window Implementation
+
+The screen is rendered using GLFW, a cross-platform windowing library:
+
+<CodeGroup>
+```cpp screen.cpp
+Screen::Screen(byte* addr_ptr) 
+{
+    framebuffer = addr_ptr;  // Points to RAM[0xA000]
+
+    if (!glfwInit()) 
+    {
+        glfwTerminate();
+        raise(Errors::SIGABRT);
+    }
+
+    window = glfwCreateWindow(
+        WIDTH * ZOOM,   // 512 pixels wide
+        HEIGHT * ZOOM,  // 512 pixels tall
+        "Neodymium vScreen",
+        NULL,
+        NULL
+    );
+
+    if (!window) 
+    {
+        glfwTerminate();
+        raise(Errors::SIGABRT);
+    }
+
+    glfwMakeContextCurrent(window);
+};
+```
+</CodeGroup>
+
+### Window Properties
+
+- **Title**: "Neodymium vScreen"
+- **Size**: 512×512 pixels (16×16 pixels zoomed 32x)
+- **Pixel Zoom**: Each VM pixel is rendered as a 32×32 pixel block
+- **Refresh**: Automatic via `tick()` method
+
+## Screen Update Cycle
+
+The display is updated on every CPU cycle:
+
+<CodeGroup>
+```cpp cpu.cpp
+int CPU::run() {
+    while (true) {
+        int res = tick();       // Execute one instruction
+        if (res != -1) {
+            return res;
+        }
+        screen.tick();          // Update display
+    }
+}
+```
+</CodeGroup>
+
+### Tick Method
+
+The `tick()` method renders the framebuffer to the window:
+
+<CodeGroup>
+```cpp screen.cpp
+void Screen::tick()
+{
+    if(glfwWindowShouldClose(window))
+    { 
+        glfwTerminate(); 
+        raise(Errors::SIGKILL);  // Exit if window closed
+    }
+
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glPixelZoom(ZOOM, ZOOM);  // Scale pixels 32x
+    glRasterPos2i(0, 0);
+
+    glDrawPixels(
+        WIDTH,          // 16 pixels wide
+        HEIGHT,         // 16 pixels tall
+        GL_RGB,         // RGB format
+        GL_UNSIGNED_BYTE,
+        framebuffer     // Points to RAM[0xA000]
+    );
+
+    glfwSwapBuffers(window);  // Display the frame
+    glfwPollEvents();         // Handle window events
+};
+```
+</CodeGroup>
+
+**Process**:
+1. Check if window should close (user clicked X)
+2. Clear the screen
+3. Set pixel zoom to 32x
+4. Draw the 16×16 framebuffer
+5. Swap buffers (double buffering)
+6. Poll for events (keyboard, mouse, etc.)
+
+<Info>
+The screen updates **every CPU instruction**, ensuring immediate visual feedback when memory is modified.
+</Info>
+
+## Color Format
+
+Colors are specified in **24-bit RGB** format:
+
+| Component | Range | Description |
+|-----------|-------|-------------|
+| **Red**   | 0-255 | Red channel intensity |
+| **Green** | 0-255 | Green channel intensity |
+| **Blue**  | 0-255 | Blue channel intensity |
+
+### Common Colors
+
+| Color | R | G | B | Hex |
+|-------|---|---|---|-----|
+| Black | 0 | 0 | 0 | `#000000` |
+| White | 255 | 255 | 255 | `#FFFFFF` |
+| Red | 255 | 0 | 0 | `#FF0000` |
+| Green | 0 | 255 | 0 | `#00FF00` |
+| Blue | 0 | 0 | 255 | `#0000FF` |
+| Yellow | 255 | 255 | 0 | `#FFFF00` |
+| Cyan | 0 | 255 | 255 | `#00FFFF` |
+| Magenta | 255 | 0 | 255 | `#FF00FF` |
+
+## Performance Considerations
+
+### Screen Update Frequency
+
+The screen updates **every CPU instruction**:
+
+- **Advantage**: Immediate visual feedback
+- **Disadvantage**: Can slow down execution if rendering is expensive
+
+<Warning>
+If your program writes to the framebuffer frequently (e.g., in a tight loop), the display updates can become a bottleneck.
+</Warning>
+
+### Memory Bandwidth
+
+Writing to screen memory is the same as writing to regular RAM:
+
+- No special overhead
+- Direct memory writes
+- No buffering or caching
+
+## Window Management
+
+### Window Closure
+
+If the user closes the window (clicks the X button), the VM terminates:
+
+<CodeGroup>
+```cpp screen.cpp
+if(glfwWindowShouldClose(window))
+{ 
+    glfwTerminate(); 
+    raise(Errors::SIGKILL);  // Force termination
+}
+```
+</CodeGroup>
+
+### Termination
+
+The screen can be explicitly terminated:
+
+<CodeGroup>
+```cpp screen.cpp
+void Screen::terminate()
+{
+    glfwTerminate();
+}
+```
+</CodeGroup>
+
+<Note>
+GLFW cleanup is handled automatically when the VM exits.
+</Note>
+
+## Example: Fill Screen with Color
+
+Fill the entire screen with a single color:
+
+```asm
+; Fill screen with blue (0, 0, 255)
+MOV $a, #0xA0       ; High byte of screen address
+MOV $b, #0x00       ; Low byte
+MOV $c, #0          ; Pixel counter (0-255)
+
+loop:
+    ; Write RGB for current pixel
+    MOV $d, #0
+    STORE [$a,$b], $d   ; Red = 0
+    
+    INC $b
+    MOV $d, #0
+    STORE [$a,$b], $d   ; Green = 0
+    
+    INC $b
+    MOV $d, #255
+    STORE [$a,$b], $d   ; Blue = 255
+    
+    INC $b              ; Move to next pixel
+    INC $c              ; Increment counter
+    
+    CMP $c, #255        ; Done?
+    JNZ [loop]          ; Continue if not
+    
+HALT
+```
+
+## Example: Draw Horizontal Line
+
+Draw a red horizontal line at y=8:
+
+```asm
+; Draw red line from (0,8) to (15,8)
+MOV $e, #0          ; x counter
+
+line_loop:
+    ; Calculate offset: (8 * 16 + x) * 3
+    MOV $a, #8
+    MOV $b, #16
+    MUL $a, $b      ; $a = 128
+    ADD $a, $e      ; $a = 128 + x
+    MOV $b, #3
+    MUL $a, $b      ; $a = (128 + x) * 3
+    
+    ; Add to base (0xA000)
+    ; $a contains low byte
+    MOV $c, #0xA0   ; High byte
+    
+    ; Draw red pixel
+    MOV $d, #255
+    STORE [$c,$a], $d   ; Red = 255
+    INC $a
+    MOV $d, #0
+    STORE [$c,$a], $d   ; Green = 0
+    INC $a
+    STORE [$c,$a], $d   ; Blue = 0
+    
+    INC $e              ; x++
+    CMP $e, #16
+    JNZ [line_loop]
+    
+HALT
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Buffered Drawing">
+    For complex graphics, calculate all pixel values first, then write them to the framebuffer in one pass to reduce flicker.
+  </Accordion>
+  
+  <Accordion title="Address Calculation">
+    Pre-calculate pixel addresses when possible. Address arithmetic is expensive on an 8-bit VM.
+  </Accordion>
+  
+  <Accordion title="Color Palettes">
+    Store frequently-used colors in RAM and copy them to the framebuffer, rather than recalculating RGB values.
+  </Accordion>
+  
+  <Accordion title="Partial Updates">
+    Only update pixels that have changed, rather than redrawing the entire screen every frame.
+  </Accordion>
+</AccordionGroup>
+
+## See Also
+
+- [Memory Architecture](/architecture/memory) - Screen memory location and layout
+- [Programming Examples](/programming/examples) - Graphics programming examples
+- [Instruction Set](/programming/instruction-set) - Complete instruction reference

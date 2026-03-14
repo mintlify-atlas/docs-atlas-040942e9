@@ -1,0 +1,262 @@
+---
+title: 'Memory Layout'
+description: 'Understanding the Neodymium VM memory architecture'
+icon: 'memory'
+---
+
+## Overview
+
+The Neodymium VM uses a flat 64KB address space, ranging from `0x0000` to `0xFFFF`. All memory is directly addressable, with specific regions reserved for different purposes.
+
+## Memory Map
+
+<Frame>
+```
+0xFFFF  ┌─────────────────────────┐
+        │                         │
+        │   General Purpose RAM   │
+        │                         │
+0xD000  ├─────────────────────────┤
+        │   Stack (256 bytes)     │
+0xCF00  ├─────────────────────────┤
+        │                         │
+        │   General Purpose RAM   │
+        │                         │
+0xA2FF  ├─────────────────────────┤
+        │   Screen Framebuffer    │
+        │   (768 bytes)           │
+        │   16×16 RGB pixels      │
+0xA000  ├─────────────────────────┤
+        │                         │
+        │   General Purpose RAM   │
+        │   (Program Code/Data)   │
+        │                         │
+0x0000  └─────────────────────────┘
+```
+</Frame>
+
+## Memory Regions
+
+### Program Code and Data Region
+
+<Card title="0x0000 - 0x9FFF" icon="code">
+  **Size:** ~40KB  
+  **Purpose:** Program code and general data storage
+  
+  This is where your program bytecode begins execution. The program counter (PC) starts at `0x0000` and executes instructions sequentially unless modified by jump or call instructions.
+</Card>
+
+**Usage:**
+```asm
+; Program typically starts at 0x0000
+MOV $a, 42          ; First instruction at 0x0000
+ADD $a, 10          ; Next instruction follows sequentially
+```
+
+### Screen Framebuffer
+
+<Card title="0xA000 - 0xA2FF" icon="tv">
+  **Size:** 768 bytes (0x300 bytes)  
+  **Purpose:** RGB framebuffer for 16×16 pixel display  
+  **Format:** 3 bytes per pixel (R, G, B)
+</Card>
+
+The screen framebuffer stores color data for a 16×16 pixel display. Each pixel requires 3 consecutive bytes:
+
+<Steps>
+  <Step title="Red Component">
+    First byte: Red intensity (0-255)
+  </Step>
+  <Step title="Green Component">
+    Second byte: Green intensity (0-255)
+  </Step>
+  <Step title="Blue Component">
+    Third byte: Blue intensity (0-255)
+  </Step>
+</Steps>
+
+**Pixel Address Calculation:**
+```
+Pixel(x, y) address = 0xA000 + ((y * 16) + x) * 3
+
+Example: Pixel at (5, 3)
+  = 0xA000 + ((3 * 16) + 5) * 3
+  = 0xA000 + (48 + 5) * 3
+  = 0xA000 + 159
+  = 0xA09F
+```
+
+<CodeGroup>
+```asm Set Pixel to Red
+; Set pixel (0, 0) to pure red (255, 0, 0)
+MOV $a, 255         ; Red = 255
+STORE [0xA000], $a  ; Write red component
+MOV $a, 0
+STORE [0xA001], $a  ; Green = 0
+STORE [0xA002], $a  ; Blue = 0
+```
+
+```asm Set Pixel to White
+; Set pixel (1, 0) to white (255, 255, 255)
+MOV $a, 255
+STORE [0xA003], $a  ; R
+STORE [0xA004], $a  ; G
+STORE [0xA005], $a  ; B
+```
+</CodeGroup>
+
+### Stack Region
+
+<Card title="0xCF00 - 0xCFFF" icon="layer-group">
+  **Size:** 256 bytes  
+  **Purpose:** Call stack for subroutines and temporary data  
+  **Growth:** Downward (from 0xCFFF towards 0xCF00)
+</Card>
+
+The stack is used automatically by `PUSH`, `POP`, `CALL`, and `RET` instructions. The stack pointer is managed internally by the CPU.
+
+<Warning>
+  Stack overflow occurs if you push more than 256 bytes. The VM does not automatically detect stack overflow, so monitor your stack usage carefully.
+</Warning>
+
+**Stack Operations:**
+```asm
+PUSH $a             ; Push register $a onto stack
+PUSH 42             ; Push immediate value
+POP $b              ; Pop top value into $b
+
+CALL [0x0500]       ; Pushes return address (2 bytes) then jumps
+RET                 ; Pops return address and jumps back
+```
+
+### General Purpose RAM
+
+<Card title="0xA300 - 0xCEFF, 0xD000 - 0xFFFF" icon="database">
+  **Size:** ~21KB (fragmented)  
+  **Purpose:** General data storage, heap, variables
+</Card>
+
+Use these regions for:
+- Global variables
+- Arrays and buffers
+- Dynamic data structures
+- Lookup tables
+
+## Addressing Modes
+
+The Neodymium VM supports multiple ways to access memory:
+
+<Tabs>
+  <Tab title="Immediate">
+    **16-bit Direct Address**
+    
+    Use a literal 16-bit address to access memory:
+    
+    ```asm
+    MOV $a, [0x1234]      ; Load from address 0x1234
+    STORE [0x5000], $b    ; Store to address 0x5000
+    ```
+    
+    The immediate address is encoded as two bytes (high byte, low byte) in the instruction stream.
+  </Tab>
+  
+  <Tab title="Register Indirect">
+    **Two-Register Address**
+    
+    Form a 16-bit address from two 8-bit registers (high byte, low byte):
+    
+    ```asm
+    MOV $g, 0xA0          ; High byte = 0xA0
+    MOV $h, 0x10          ; Low byte = 0x10
+    MOV $a, [$g, $h]      ; Load from 0xA010
+    ```
+    
+    This mode enables dynamic addressing and pointer arithmetic.
+  </Tab>
+  
+  <Tab title="Mixed Mode">
+    **Register + ALWAYS_ZERO**
+    
+    Access addresses in the first 256 bytes (0x00XX):
+    
+    ```asm
+    MOV $a, 0x42
+    MOV $b, [0xFF, $a]    ; Load from 0x0042
+    ```
+    
+    Using `0xFF` (ALWAYS_ZERO) as the high byte simplifies low-memory access.
+  </Tab>
+</Tabs>
+
+## Memory Access Examples
+
+<CodeGroup>
+```asm Reading from Memory
+; Direct addressing
+MOV $a, [0x0100]      ; Read byte at 0x0100
+
+; Register indirect
+MOV $g, 0x01          ; High byte
+MOV $h, 0x50          ; Low byte
+MOV $b, [$g, $h]      ; Read from 0x0150
+
+; Using ALWAYS_ZERO
+MOV $c, 0x80
+MOV $d, [0xFF, $c]    ; Read from 0x0080
+```
+
+```asm Writing to Memory
+; Store register to memory
+MOV $a, 42
+STORE [0x0200], $a    ; Write 42 to 0x0200
+
+; Store immediate to memory
+STORE [0x0201], 255   ; Write 255 to 0x0201
+
+; Register indirect store
+MOV $g, 0x03
+MOV $h, 0x00
+MOV $a, 100
+STORE [$g, $h], $a    ; Write 100 to 0x0300
+```
+
+```asm Array Access
+; Access array element
+; Array at 0x1000, access index in $a
+MOV $a, 5             ; Index 5
+MOV $g, 0x10          ; High byte of base address
+MOV $h, 0x00          ; Low byte of base address
+ADD $h, $a            ; Add index to low byte
+; Handle overflow if necessary
+MOV $b, [$g, $h]      ; Read array[5]
+```
+</CodeGroup>
+
+## Memory Initialization
+
+<Info>
+  All memory is initialized to zero (`0x00`) when the VM starts. This includes the program region, stack, and framebuffer.
+</Info>
+
+Your program must explicitly initialize any data it needs:
+
+```asm
+; Initialize a lookup table at 0x2000
+MOV $a, 10
+STORE [0x2000], $a
+MOV $a, 20
+STORE [0x2001], $a
+MOV $a, 30
+STORE [0x2002], $a
+```
+
+## Performance Considerations
+
+<Note>
+  - **Register operations** are fastest (no memory access)
+  - **Direct addressing** with immediate values is efficient
+  - **Register indirect** addressing adds minimal overhead
+  - **Screen framebuffer** writes are immediately visible (refreshed every CPU tick)
+</Note>
+
+The VM uses a flat memory model with no caching, so all memory accesses have uniform latency (source: `ram.cpp:28-31`).

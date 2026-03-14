@@ -1,0 +1,293 @@
+---
+title: Stack
+description: LIFO data structure for managing the call stack and temporary storage
+---
+
+The `Stack` struct provides a Last-In-First-Out (LIFO) data structure for managing function calls, return addresses, and temporary data storage.
+
+## Overview
+
+The stack is 256 bytes in size and is memory-mapped to RAM starting at address 0xCF00. It grows downward from the top and supports both single-byte and 16-bit operations.
+
+## Definition
+
+```cpp
+struct Stack {
+    private:
+    bytes stack;
+    byte sp;
+
+    public:
+    Stack(byte* stack_start);
+    byte peek();
+    byte pop();
+    uint16_t pop_16bit();
+    void push(byte data);
+    void push_16bit(uint16_t data);
+};
+```
+
+Defined in: `stack.h:4`
+
+## Members
+
+<ParamField path="stack" type="bytes">
+  Pointer to the stack memory region. Points to a 256-byte region in RAM (starting at 0xCF00).
+</ParamField>
+
+<ParamField path="sp" type="byte">
+  Stack Pointer. Tracks the current position in the stack. Ranges from 0 to 255.
+</ParamField>
+
+Defined in: `stack.h:6-7`
+
+## Constructor
+
+### Stack()
+
+```cpp
+Stack(byte* stack_start)
+```
+
+Initializes the stack with a pointer to its memory region.
+
+Defined in: `stack.cpp:4`
+
+<ParamField path="stack_start" type="byte*">
+  Pointer to the beginning of the 256-byte stack region in RAM (typically &ram.memory[0xCF00]).
+</ParamField>
+
+**Behavior:**
+- Sets the stack pointer to the provided memory address
+- Initializes `sp` to 0 (empty stack)
+
+**Example:**
+
+```cpp
+RAM ram;
+Stack stack(&ram.memory[0xCF00]);
+```
+
+## Methods
+
+### peek()
+
+```cpp
+byte peek()
+```
+
+Returns the top value on the stack without removing it.
+
+Defined in: `stack.cpp:8`
+
+<ResponseField name="return" type="byte">
+  The byte value at the top of the stack.
+</ResponseField>
+
+**Behavior:**
+- Returns `stack[255 - sp]` without modifying the stack pointer
+- Does not change the stack state
+
+**Example:**
+
+```cpp
+Stack stack(&ram.memory[0xCF00]);
+stack.push(0x42);
+stack.push(0xAB);
+
+byte top = stack.peek(); // Returns 0xAB
+byte top2 = stack.peek(); // Still returns 0xAB (not removed)
+```
+
+### pop()
+
+```cpp
+byte pop()
+```
+
+Removes and returns the top value from the stack.
+
+Defined in: `stack.cpp:12`
+
+<ResponseField name="return" type="byte">
+  The byte value that was at the top of the stack.
+</ResponseField>
+
+**Behavior:**
+- Reads the value at `stack[255 - sp]`
+- Decrements the stack pointer by 1
+- Returns the value that was read
+- Stack grows downward, so popping decreases `sp`
+
+**Example:**
+
+```cpp
+Stack stack(&ram.memory[0xCF00]);
+stack.push(0x42);
+stack.push(0xAB);
+
+byte first = stack.pop();  // Returns 0xAB
+byte second = stack.pop(); // Returns 0x42
+```
+
+### pop_16bit()
+
+```cpp
+uint16_t pop_16bit()
+```
+
+Removes and returns a 16-bit value from the stack.
+
+Defined in: `stack.cpp:18`
+
+<ResponseField name="return" type="uint16_t">
+  A 16-bit value composed of two bytes from the stack.
+</ResponseField>
+
+**Behavior:**
+- Calls `pop()` twice to retrieve two bytes
+- First pop gets the high byte (y)
+- Second pop gets the low byte (x)
+- Combines them into a 16-bit value using `bytes_to_uint16(x, y)`
+- The stack pointer is decremented by 2 in total
+
+**Example:**
+
+```cpp
+Stack stack(&ram.memory[0xCF00]);
+stack.push_16bit(0x1234);
+
+uint16_t value = stack.pop_16bit(); // Returns 0x1234
+```
+
+### push()
+
+```cpp
+void push(byte data)
+```
+
+Pushes a byte value onto the stack.
+
+Defined in: `stack.cpp:24`
+
+<ParamField path="data" type="byte">
+  The byte value to push onto the stack.
+</ParamField>
+
+**Behavior:**
+- Writes `data` to `stack[255 - sp]`
+- Increments the stack pointer by 1
+- Stack grows downward in memory
+
+**Example:**
+
+```cpp
+Stack stack(&ram.memory[0xCF00]);
+stack.push(0x42);
+stack.push(0xAB);
+stack.push(0xCD);
+```
+
+### push_16bit()
+
+```cpp
+void push_16bit(uint16_t data)
+```
+
+Pushes a 16-bit value onto the stack.
+
+Defined in: `stack.cpp:29`
+
+<ParamField path="data" type="uint16_t">
+  The 16-bit value to push onto the stack.
+</ParamField>
+
+**Behavior:**
+- Converts the 16-bit value to two bytes using `uint16_to_bytes()`
+- Pushes the low byte first (bdata[0])
+- Pushes the high byte second (bdata[1])
+- The stack pointer is incremented by 2 in total
+- When popped with `pop_16bit()`, the original 16-bit value is reconstructed
+
+**Example:**
+
+```cpp
+Stack stack(&ram.memory[0xCF00]);
+stack.push_16bit(0x1234); // Pushes low byte 0x34, then high byte 0x12
+
+uint16_t value = stack.pop_16bit(); // Returns 0x1234
+```
+
+## Stack Layout
+
+The stack operates in a downward-growing manner:
+
+```
+Address    SP=0   SP=1   SP=2   SP=3
+0xCFFF     [top]  [...]  [...]  [...]
+0xCFFE     [...]  [top]  [...]  [...]
+0xCFFD     [...]  [...]  [top]  [...]
+0xCFFC     [...]  [...]  [...]  [top]
+...
+0xCF00     [...]  [...]  [...]  [...]
+```
+
+The formula `stack[255 - sp]` means:
+- When `sp = 0`: access `stack[255]` (top of memory region)
+- When `sp = 1`: access `stack[254]`
+- When `sp = 255`: access `stack[0]` (bottom of memory region)
+
+## Usage in Function Calls
+
+The stack is primarily used by the CALL and RET instructions:
+
+```cpp
+// CALL instruction (opcode 0x50)
+stack.push_16bit(ram.pc); // Save return address
+ram.pc = target_address;  // Jump to function
+
+// RET instruction (opcode 0x52)
+uint16_t return_addr = stack.pop_16bit(); // Restore return address
+ram.pc = return_addr;                     // Jump back
+```
+
+## Example Usage
+
+```cpp
+#include "ram.h"
+#include "stack.h"
+
+int main() {
+    RAM ram;
+    Stack stack(&ram.memory[0xCF00]);
+    
+    // Push some values
+    stack.push(0x11);
+    stack.push(0x22);
+    stack.push(0x33);
+    
+    // Peek at top without removing
+    byte top = stack.peek(); // Returns 0x33
+    
+    // Pop values
+    byte val1 = stack.pop(); // Returns 0x33
+    byte val2 = stack.pop(); // Returns 0x22
+    byte val3 = stack.pop(); // Returns 0x11
+    
+    // Work with 16-bit values
+    stack.push_16bit(0x1234);
+    stack.push_16bit(0xABCD);
+    
+    uint16_t addr1 = stack.pop_16bit(); // Returns 0xABCD
+    uint16_t addr2 = stack.pop_16bit(); // Returns 0x1234
+    
+    return 0;
+}
+```
+
+## Notes
+
+- The stack has a maximum capacity of 256 bytes
+- There is no overflow or underflow protection - pushing beyond 256 bytes or popping from an empty stack will cause undefined behavior
+- The stack is memory-mapped, so direct writes to addresses 0xCF00-0xCFFF will affect the stack
+- When using 16-bit operations, ensure you have at least 2 bytes of space available

@@ -1,0 +1,214 @@
+---
+title: Installation
+description: Build and install Neodymium VM from source
+---
+
+# Installing Neodymium VM
+
+Neodymium VM is built from source using CMake. Follow these steps to get it up and running on your system.
+
+<Warning>
+Neodymium VM only supports UNIX-based operating systems (Linux, macOS). Windows compilation and execution are not currently supported.
+</Warning>
+
+## Prerequisites
+
+Before installing Neodymium VM, ensure your system meets these requirements:
+
+### Required Dependencies
+
+<Steps>
+  <Step title="C++17 or Higher">
+    Neodymium VM requires a compiler with C++17 standard support or higher.
+    
+    Verify your compiler version:
+    ```bash
+    g++ --version
+    # or
+    clang++ --version
+    ```
+  </Step>
+
+  <Step title="CMake 3.31.6 or Higher">
+    CMake is used to generate the build system.
+    
+    Check your CMake version:
+    ```bash
+    cmake --version
+    ```
+    
+    If you need to install or update CMake:
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install cmake
+    
+    # macOS
+    brew install cmake
+    ```
+  </Step>
+
+  <Step title="GLFW 3.4 or Higher">
+    GLFW is required for the virtual screen rendering.
+    
+    Install GLFW:
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install libglfw3-dev
+    
+    # macOS
+    brew install glfw
+    ```
+  </Step>
+
+  <Step title="OpenGL">
+    OpenGL is used for graphics rendering.
+    
+    Install OpenGL development libraries:
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install libgl1-mesa-dev
+    
+    # macOS (included by default)
+    ```
+  </Step>
+</Steps>
+
+<Info>
+Make sure you have all dependencies installed before proceeding with the build process.
+</Info>
+
+## Building from Source
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the Neodymium VM repository from GitHub and navigate to the project folder:
+    
+    ```bash
+    git clone https://www.github.com/cr4t3/Neodymium.git
+    cd Neodymium
+    ```
+  </Step>
+
+  <Step title="Create Build Directory">
+    Create a dedicated build directory to keep the source tree clean:
+    
+    ```bash
+    mkdir build
+    cd build
+    ```
+    
+    <Note>
+    Using a separate build directory follows CMake best practices and makes it easy to clean up build artifacts.
+    </Note>
+  </Step>
+
+  <Step title="Generate Build Files">
+    Run CMake to generate the build system configuration:
+    
+    ```bash
+    cmake ..
+    ```
+    
+    This command:
+    - Detects your compiler and system configuration
+    - Verifies all dependencies are available
+    - Generates platform-specific build files
+    - Configures C++17 standard and debug flags
+  </Step>
+
+  <Step title="Compile the Project">
+    Build the Neodymium VM executable:
+    
+    ```bash
+    cmake --build .
+    ```
+    
+    This compiles:
+    - Main entry point (`src/main.cpp`)
+    - CPU module with instruction execution
+    - RAM and stack management
+    - Screen rendering subsystem
+    - All supporting modules
+    
+    The resulting binary will be named `neodymium`.
+  </Step>
+</Steps>
+
+## Verification
+
+After building, verify that Neodymium VM is installed correctly:
+
+```bash
+neodymium --version
+```
+
+You should see output similar to:
+```
+Neodymium VM v0.2.2 (build 5)
+```
+
+Alternatively, use the short flag:
+```bash
+neodymium -v
+```
+
+<Note>
+If the `neodymium` command is not found, you may need to run it from the build directory as `./neodymium` or add it to your system PATH.
+</Note>
+
+## Installation Location
+
+By default, the compiled binary is located in:
+```
+Neodymium/build/neodymium
+```
+
+You can optionally install it system-wide (requires appropriate permissions):
+
+```bash
+sudo cmake --install .
+```
+
+## Troubleshooting
+
+### Compiler Version Error
+
+If you see an error about C++17:
+```
+C++17 is the standard version. Update to C++17 or higher.
+```
+
+Update your compiler or explicitly set the C++ standard:
+```bash
+cmake .. -DCMAKE_CXX_STANDARD=17
+```
+
+### GLFW Not Found
+
+If CMake cannot find GLFW:
+```
+Could NOT find glfw3
+```
+
+Ensure GLFW 3.4+ is installed and pkg-config can locate it:
+```bash
+pkg-config --modversion glfw3
+```
+
+### OpenGL Issues
+
+If you encounter OpenGL linking errors, verify the OpenGL development libraries are installed for your platform.
+
+## System Requirements
+
+Minimum system requirements:
+- **RAM**: 128 KB
+- **CPU**: 1 core
+- **Storage**: 8 MB
+- **OS**: UNIX-based (Linux, macOS)
+
+## Next Steps
+
+<Card title="Quick Start Guide" icon="rocket" href="/quickstart">
+  Learn how to run your first binary program with Neodymium VM
+</Card>

@@ -1,0 +1,283 @@
+---
+title: RAM
+description: Memory module providing 64KB of addressable storage for code and data
+---
+
+The `RAM` struct provides the main memory for Neodymium VM, offering 64KB of addressable storage space and managing the program counter.
+
+## Overview
+
+RAM provides 65,536 bytes of memory (addresses 0x0000 to 0xFFFF) and includes methods for reading, writing, and navigating through memory during program execution.
+
+## Definition
+
+```cpp
+struct RAM {
+    bytes memory;
+    uint16_t pc;
+    
+    RAM();
+    ~RAM();
+    byte current();
+    byte next();
+    byte get_from_address(uint16_t addr);
+    uint16_t next_16bit_immediate();
+    int write(uint16_t address, byte data);
+};
+```
+
+Defined in: `ram.h:4`
+
+## Members
+
+<ParamField path="memory" type="bytes">
+  Pointer to a 64KB array of bytes (0x10000 bytes). This is the main storage for program code and data, spanning addresses 0x0000 to 0xFFFF.
+</ParamField>
+
+<ParamField path="pc" type="uint16_t">
+  Program Counter. Points to the current position in memory being executed. Ranges from 0x0000 to 0xFFFF.
+</ParamField>
+
+Defined in: `ram.h:5-6`
+
+## Constructor
+
+### RAM()
+
+```cpp
+RAM()
+```
+
+Allocates and initializes the RAM.
+
+Defined in: `ram.cpp:5`
+
+**Behavior:**
+- Allocates 65,536 bytes (0x10000) of memory
+- Initializes all memory to 0
+- Sets the program counter (`pc`) to 0
+
+**Example:**
+
+```cpp
+RAM ram;
+ram.memory[0] = 0x42; // Write to address 0
+ram.pc = 0x1000;      // Set PC to address 0x1000
+```
+
+## Destructor
+
+### ~RAM()
+
+```cpp
+~RAM()
+```
+
+Frees the allocated memory.
+
+Defined in: `ram.cpp:11`
+
+**Behavior:**
+- Deallocates the memory array to prevent memory leaks
+
+## Methods
+
+### current()
+
+```cpp
+byte current()
+```
+
+Returns the byte at the current program counter position without advancing the PC.
+
+Defined in: `ram.cpp:16`
+
+<ResponseField name="return" type="byte">
+  The byte value at address `pc`.
+</ResponseField>
+
+**Example:**
+
+```cpp
+RAM ram;
+ram.memory[0x100] = 0xAB;
+ram.pc = 0x100;
+
+byte value = ram.current(); // Returns 0xAB
+// PC is still 0x100
+```
+
+### next()
+
+```cpp
+byte next()
+```
+
+Returns the byte at the current program counter position and increments the PC.
+
+Defined in: `ram.cpp:21`
+
+<ResponseField name="return" type="byte">
+  The byte value at the current PC position before incrementing.
+</ResponseField>
+
+**Behavior:**
+- Reads the byte at `memory[pc]`
+- Increments `pc` by 1
+- Returns the byte that was read
+
+**Example:**
+
+```cpp
+RAM ram;
+ram.memory[0x100] = 0xAB;
+ram.memory[0x101] = 0xCD;
+ram.pc = 0x100;
+
+byte first = ram.next();  // Returns 0xAB, PC becomes 0x101
+byte second = ram.next(); // Returns 0xCD, PC becomes 0x102
+```
+
+### get_from_address()
+
+```cpp
+byte get_from_address(uint16_t addr)
+```
+
+Returns the byte at a specific memory address without affecting the PC.
+
+Defined in: `ram.cpp:28`
+
+<ParamField path="addr" type="uint16_t">
+  The memory address to read from (0x0000 to 0xFFFF).
+</ParamField>
+
+<ResponseField name="return" type="byte">
+  The byte value at the specified address.
+</ResponseField>
+
+**Example:**
+
+```cpp
+RAM ram;
+ram.memory[0x5000] = 0x42;
+
+byte value = ram.get_from_address(0x5000); // Returns 0x42
+// PC is unaffected
+```
+
+### next_16bit_immediate()
+
+```cpp
+uint16_t next_16bit_immediate()
+```
+
+Reads a 16-bit value from the current PC position and advances the PC by 2.
+
+Defined in: `ram.cpp:33`
+
+<ResponseField name="return" type="uint16_t">
+  A 16-bit value constructed from two consecutive bytes in memory.
+</ResponseField>
+
+**Behavior:**
+- Calls `next()` twice to read two consecutive bytes
+- Combines them into a 16-bit value using `bytes_to_uint16()`
+- The PC is incremented by 2 in total
+- Byte order: first byte is the low byte, second byte is the high byte
+
+**Example:**
+
+```cpp
+RAM ram;
+ram.memory[0x100] = 0x34; // Low byte
+ram.memory[0x101] = 0x12; // High byte
+ram.pc = 0x100;
+
+uint16_t addr = ram.next_16bit_immediate(); // Returns 0x1234
+// PC is now 0x102
+```
+
+### write()
+
+```cpp
+int write(uint16_t address, byte data)
+```
+
+Writes a byte to a specific memory address.
+
+Defined in: `ram.cpp:39`
+
+<ParamField path="address" type="uint16_t">
+  The memory address to write to (0x0000 to 0xFFFF).
+</ParamField>
+
+<ParamField path="data" type="byte">
+  The byte value to write.
+</ParamField>
+
+<ResponseField name="return" type="int">
+  Returns 0 on success, 1 on error (though error is extremely unlikely).
+</ResponseField>
+
+**Behavior:**
+- Writes the byte to `memory[address]`
+- Verifies the write by checking if the value was stored correctly
+- Returns 0 if successful, 1 if the write verification fails
+
+**Example:**
+
+```cpp
+RAM ram;
+int result = ram.write(0x2000, 0xFF);
+if (result == 0) {
+    // Write successful
+    byte value = ram.get_from_address(0x2000); // Returns 0xFF
+}
+```
+
+## Memory Map
+
+Neodymium VM uses specific memory regions for different purposes:
+
+- **0x0000 - 0x9FFF**: General purpose memory (40KB)
+- **0xA000 - 0xA2FF**: Screen framebuffer (768 bytes for 16x16 RGB display)
+- **0xA300 - 0xCEFF**: General purpose memory (continued)
+- **0xCF00 - 0xCFFF**: Stack memory (256 bytes)
+- **0xD000 - 0xFFFF**: General purpose memory (continued)
+
+## Example Usage
+
+```cpp
+#include "ram.h"
+
+int main() {
+    RAM ram;
+    
+    // Write a simple program
+    ram.write(0x0000, 0x02);  // MOV opcode
+    ram.write(0x0001, 0x00);  // Register 0
+    ram.write(0x0002, 0x42);  // Immediate value
+    
+    // Read and execute
+    ram.pc = 0x0000;
+    byte opcode = ram.next();     // Read 0x02, PC = 0x0001
+    byte reg = ram.next();        // Read 0x00, PC = 0x0002  
+    byte value = ram.next();      // Read 0x42, PC = 0x0003
+    
+    // Read 16-bit address
+    ram.memory[0x0010] = 0x00;
+    ram.memory[0x0011] = 0x10;
+    ram.pc = 0x0010;
+    uint16_t addr = ram.next_16bit_immediate(); // Returns 0x1000
+    
+    return 0;
+}
+```
+
+## Notes
+
+- The program counter wraps around at 0xFFFF (though this would typically indicate a program error)
+- Memory is not protected - any address can be read or written
+- The stack and screen are memory-mapped, so writing to their addresses affects those components
+- All memory is initialized to 0 on construction

@@ -1,0 +1,302 @@
+---
+title: Memory Architecture
+description: RAM structure, addressing, and memory-mapped I/O in Neodymium VM
+---
+
+## RAM Structure
+
+The Neodymium VM uses a flat 64KB memory space, defined in `ram.h` and implemented in `ram.cpp`.
+
+<CodeGroup>
+```cpp ram.h
+struct RAM {
+    bytes memory;
+    uint16_t pc;  // Program counter
+    
+    byte current();
+    byte next();
+    byte get_from_address(uint16_t addr);
+    uint16_t next_16bit_immediate();
+    int write(uint16_t address, byte data);
+};
+```
+</CodeGroup>
+
+## Address Space
+
+The RAM provides **64KB of addressable memory** from `0x0000` to `0xFFFF`:
+
+<CodeGroup>
+```cpp ram.cpp
+RAM::RAM() : pc(0) 
+{
+    memory = new byte[0x10000](); // 0x0000 - 0xFFFF
+};
+```
+</CodeGroup>
+
+### Memory Layout
+
+| Address Range | Size | Purpose | Notes |
+|--------------|------|---------|-------|
+| `0x0000-0x9FFF` | 40KB | Program & Data | General-purpose RAM |
+| `0xA000-0xCEFF` | ~12KB | Screen Buffer | Memory-mapped display (256 bytes used) |
+| `0xCF00-0xCFFF` | 256 bytes | Stack | Hardware stack region |
+| `0xD000-0xFFFF` | 12KB | General RAM | Available for programs |
+
+<Note>
+Memory-mapped regions are defined in `cpu.cpp`:
+- **Stack**: `0xCF00` (defined as `STACK_ADDRESS`)
+- **Screen**: `0xA000` (defined as `SCREEN_ADDRESS`)
+</Note>
+
+## Program Counter
+
+The **program counter (pc)** is a 16-bit register that points to the next instruction to execute:
+
+- **Initial value**: `0x0000`
+- **Type**: `uint16_t` (16-bit unsigned integer)
+- **Auto-increment**: Incremented by the `next()` method when fetching instructions
+- **Modifiable**: Can be changed by jump and call instructions
+
+<CodeGroup>
+```cpp ram.cpp
+byte RAM::next() 
+{
+    byte result = memory[pc];
+    pc++;  // Auto-increment after read
+    return result;
+}
+```
+</CodeGroup>
+
+### Program Counter Operations
+
+<Tabs>
+  <Tab title="Sequential Execution">
+    ```cpp
+    // Normal instruction flow
+    byte opcode = ram.next();  // Reads memory[pc], then pc++
+    ```
+  </Tab>
+  
+  <Tab title="Jump">
+    ```cpp
+    // JMP [#0] - Unconditional jump
+    uint16_t immediate = ram.next_16bit_immediate();
+    ram.pc = immediate;  // Direct assignment
+    ```
+  </Tab>
+  
+  <Tab title="Call/Return">
+    ```cpp
+    // CALL pushes current pc to stack
+    stack.push_16bit(ram.pc);
+    ram.pc = target_address;
+    
+    // RET pops return address from stack
+    ram.pc = stack.pop_16bit();
+    ```
+  </Tab>
+</Tabs>
+
+## Memory Access Operations
+
+### Reading Memory
+
+There are multiple ways to read from memory:
+
+#### Current Byte (No Increment)
+```cpp
+byte RAM::current() 
+{
+    return memory[pc];
+}
+```
+
+#### Next Byte (With Increment)
+```cpp
+byte RAM::next() 
+{
+    byte result = memory[pc];
+    pc++;
+    return result;
+}
+```
+
+#### Random Access
+```cpp
+byte RAM::get_from_address(uint16_t addr) 
+{
+    return memory[addr];
+}
+```
+
+#### 16-bit Immediate
+```cpp
+uint16_t RAM::next_16bit_immediate() 
+{
+    uint16_t result = bytes_to_uint16(next(), next());
+    return result;
+}
+```
+
+<Info>
+16-bit values are stored in **big-endian** format: the first byte read is the high byte, and the second is the low byte.
+</Info>
+
+### Writing Memory
+
+Memory writes are performed through the `write()` method:
+
+<CodeGroup>
+```cpp ram.cpp
+int RAM::write(uint16_t address, byte data) 
+{
+    memory[address] = data;
+    if (memory[address] != data) return 1; // Error check
+    return 0;  // Success
+}
+```
+</CodeGroup>
+
+Example usage from CPU:
+```cpp
+// STORE [#0], $x - Store register to memory
+uint16_t addr = ram.next_16bit_immediate();
+byte* register_x = get_next_as_register();
+ram.write(addr, *register_x);
+```
+
+## Memory-Mapped I/O
+
+Neodymium VM uses memory-mapped I/O for hardware peripherals. Writing to specific memory addresses controls hardware devices.
+
+### Stack Region (0xCF00-0xCFFF)
+
+The stack is allocated at address `0xCF00`:
+
+<CodeGroup>
+```cpp cpu.cpp
+#define STACK_ADDRESS 0xcf00
+
+CPU::CPU()
+: stack(Stack(&(ram.memory[STACK_ADDRESS])))
+{
+    // Stack is given a pointer to RAM at 0xCF00
+}
+```
+</CodeGroup>
+
+- **Size**: 256 bytes (0xCF00 to 0xCFFF)
+- **Access**: Through stack push/pop operations only
+- **Warning**: Direct memory writes to this region can corrupt the stack
+
+<Warning>
+Avoid writing directly to `0xCF00-0xCFFF` using `STORE` instructions. Use `PUSH` and `POP` instead.
+</Warning>
+
+### Screen Region (0xA000+)
+
+The display framebuffer starts at address `0xA000`:
+
+<CodeGroup>
+```cpp cpu.cpp
+#define SCREEN_ADDRESS 0xa000
+
+CPU::CPU()
+: screen(Screen(&(ram.memory[SCREEN_ADDRESS])))
+{
+    // Screen is given a pointer to RAM at 0xA000
+}
+```
+</CodeGroup>
+
+- **Start address**: `0xA000`
+- **Format**: RGB bytes (3 bytes per pixel)
+- **Size**: 16×16 pixels = 768 bytes total
+- **Access**: Direct memory writes immediately affect the display
+
+Example - Set pixel (0,0) to red:
+```asm
+MOV $a, #255        ; Red = 255
+STORE [0xA000], $a  ; R component
+MOV $a, #0
+STORE [0xA001], $a  ; G component
+STORE [0xA002], $a  ; B component
+```
+
+<Info>
+See [Display Architecture](/architecture/display) for detailed information about the screen framebuffer format.
+</Info>
+
+## Address Construction
+
+Since addresses are 16-bit but registers are 8-bit, addresses are constructed from two bytes:
+
+### Using Two Registers
+```asm
+MOV $a, #0xA0      ; High byte
+MOV $b, #0x00      ; Low byte
+MOV $c, [$a,$b]    ; Read from 0xA000
+```
+
+### Using Immediate Values
+```asm
+MOV $a, [0xA000]   ; Direct 16-bit address
+```
+
+### Using ALWAYS_ZERO Register
+```asm
+MOV $a, #0xA0           ; High byte
+MOV $b, [$a,0xFF]       ; 0xFF is ALWAYS_ZERO
+                        ; Reads from 0xA000
+```
+
+## Memory Management
+
+The RAM is dynamically allocated and cleaned up:
+
+<CodeGroup>
+```cpp ram.cpp
+RAM::RAM() : pc(0) 
+{
+    memory = new byte[0x10000]();  // Allocate 64KB
+};
+
+RAM::~RAM() 
+{
+    delete[] memory;  // Free memory on destruction
+};
+```
+</CodeGroup>
+
+<Note>
+The entire 64KB is zero-initialized when the VM starts, ensuring predictable behavior.
+</Note>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Program Placement">
+    Place your program starting at `0x0000` or a low address. The CPU begins execution at `pc = 0x0000`.
+  </Accordion>
+  
+  <Accordion title="Data Storage">
+    Use addresses `0xD000-0xFFFF` for program data to avoid conflicts with memory-mapped regions.
+  </Accordion>
+  
+  <Accordion title="Stack Usage">
+    The stack grows downward from `0xCFFF`. Ensure your program doesn't overflow the 256-byte limit.
+  </Accordion>
+  
+  <Accordion title="Screen Buffer">
+    Direct writes to `0xA000+` are the fastest way to update the display. Calculate pixel addresses as: `0xA000 + (y * 16 + x) * 3`
+  </Accordion>
+</AccordionGroup>
+
+## See Also
+
+- [CPU Architecture](/architecture/cpu) - Instruction execution and addressing modes
+- [Stack Architecture](/architecture/stack) - Stack implementation details
+- [Display Architecture](/architecture/display) - Screen framebuffer format

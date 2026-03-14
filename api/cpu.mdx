@@ -1,0 +1,283 @@
+---
+title: CPU
+description: The central processing unit that executes instructions and manages VM components
+---
+
+The `CPU` struct is the heart of Neodymium VM, responsible for executing instructions, managing registers, and coordinating the RAM, Stack, and Screen components.
+
+## Overview
+
+The CPU contains 8 general-purpose registers, three status flags (zero, underflow, overflow), and orchestrates all VM operations through its instruction set.
+
+## Definition
+
+```cpp
+struct CPU {
+    // Public components
+    RAM ram;
+    Stack stack;
+    Screen screen;
+
+    // Constructor
+    CPU();
+    
+    // Public methods
+    int tick();
+    int run();
+
+    // Private members
+    private:
+    byte ALWAYS_ZERO;
+    bytes registers;
+    bool zero;
+    bool underflow;
+    bool overflow;
+    
+    // Private methods
+    byte* get_register_by_address(byte addr);
+    byte* get_next_as_register();
+    void update_flags_with_number(int64_t num);
+};
+```
+
+Defined in: `cpu.h:7`
+
+## Public Components
+
+<ParamField path="ram" type="RAM">
+  The RAM module that stores program code and data. Provides 64KB of addressable memory space (0x0000 - 0xFFFF).
+</ParamField>
+
+<ParamField path="stack" type="Stack">
+  The stack module for managing the call stack and temporary data storage. Located at memory address 0xCF00.
+</ParamField>
+
+<ParamField path="screen" type="Screen">
+  The screen module for graphics output. Memory-mapped to address 0xA000, provides a 16x16 pixel display.
+</ParamField>
+
+## Constructor
+
+### CPU()
+
+```cpp
+CPU()
+```
+
+Initializes the CPU with all components and sets up the initial state.
+
+Defined in: `cpu.cpp:33`
+
+**Behavior:**
+- Initializes the RAM module
+- Creates the Stack at address 0xCF00 in RAM
+- Creates the Screen at address 0xA000 in RAM
+- Allocates 8 general-purpose registers, all initialized to 0
+- Sets all flags (zero, underflow, overflow) to false
+
+## Public Methods
+
+### tick()
+
+```cpp
+int tick()
+```
+
+Executes a single instruction cycle.
+
+Defined in: `cpu.cpp:39`
+
+<ResponseField name="return" type="int">
+  Returns -1 if execution should continue, or an exit code (0-255) if a HALT instruction was executed.
+</ResponseField>
+
+**Behavior:**
+- Fetches the next opcode from RAM at the current program counter (PC)
+- Decodes and executes the instruction
+- Updates registers, flags, and memory as needed
+- Returns -1 for normal instructions or an exit code for HALT instructions (0xFF, 0xFE, 0xFD)
+
+**Example:**
+
+```cpp
+CPU cpu;
+// Load program into cpu.ram.memory...
+cpu.ram.pc = 0x0000; // Set program counter to start
+
+int result = cpu.tick(); // Execute one instruction
+if (result == -1) {
+    // Continue execution
+} else {
+    // Program halted with exit code
+    std::cout << "Program exited with code: " << result << std::endl;
+}
+```
+
+### run()
+
+```cpp
+int run()
+```
+
+Executes instructions continuously until a HALT instruction is encountered.
+
+Defined in: `cpu.cpp:518`
+
+<ResponseField name="return" type="int">
+  Returns the exit code from the HALT instruction (0-255).
+</ResponseField>
+
+**Behavior:**
+- Continuously calls `tick()` in a loop
+- After each instruction, calls `screen.tick()` to update the display
+- Continues until `tick()` returns a non-negative value (HALT)
+- Returns the exit code from the HALT instruction
+
+**Example:**
+
+```cpp
+CPU cpu;
+// Load program into cpu.ram.memory...
+cpu.ram.pc = 0x0000;
+
+int exit_code = cpu.run(); // Run until HALT
+std::cout << "Program completed with exit code: " << exit_code << std::endl;
+```
+
+## Private Members
+
+### ALWAYS_ZERO
+
+<ParamField path="ALWAYS_ZERO" type="byte">
+  A special register that always reads as zero. Accessed when register address 0xFF is specified. Can be written to, but writes have no effect.
+</ParamField>
+
+Defined in: `cpu.h:10`
+
+### registers
+
+<ParamField path="registers" type="bytes">
+  Array of 8 general-purpose registers (addresses 0-7). Each register stores a single byte value.
+</ParamField>
+
+Defined in: `cpu.h:11`
+
+### Flags
+
+The CPU maintains three status flags that are updated by arithmetic, comparison, and other operations:
+
+<ParamField path="zero" type="bool">
+  Set to `true` when the result of an operation equals zero.
+</ParamField>
+
+<ParamField path="underflow" type="bool">
+  Set to `true` when the result of an operation is less than 0 (wraps around to 255).
+</ParamField>
+
+<ParamField path="overflow" type="bool">
+  Set to `true` when the result of an operation is greater than 255 (wraps around to 0).
+</ParamField>
+
+Defined in: `cpu.h:16-18`
+
+## Private Methods
+
+### get_register_by_address()
+
+```cpp
+byte* get_register_by_address(byte addr)
+```
+
+Retrieves a pointer to a register by its address.
+
+Defined in: `cpu.cpp:14`
+
+<ParamField path="addr" type="byte">
+  Register address (0-7 for normal registers, 0xFF for ALWAYS_ZERO).
+</ParamField>
+
+<ResponseField name="return" type="byte*">
+  Pointer to the requested register.
+</ResponseField>
+
+**Behavior:**
+- If `addr` is 0xFF, returns a pointer to `ALWAYS_ZERO`
+- If `addr` is 0-7, returns a pointer to that register
+- If `addr` is >= 8 and != 0xFF, raises SIGSEGV (segmentation fault)
+
+### get_next_as_register()
+
+```cpp
+byte* get_next_as_register()
+```
+
+Fetches the next byte from RAM and interprets it as a register address.
+
+Defined in: `cpu.cpp:21`
+
+<ResponseField name="return" type="byte*">
+  Pointer to the register specified by the next byte in the instruction stream.
+</ResponseField>
+
+**Behavior:**
+- Calls `ram.next()` to fetch the next byte
+- Passes it to `get_register_by_address()` to get the register pointer
+
+### update_flags_with_number()
+
+```cpp
+void update_flags_with_number(int64_t num)
+```
+
+Updates the CPU flags based on a numeric result.
+
+Defined in: `cpu.cpp:26`
+
+<ParamField path="num" type="int64_t">
+  The numeric result to evaluate (can be outside byte range).
+</ParamField>
+
+**Behavior:**
+- Sets `overflow` to `true` if `num > 255`
+- Sets `zero` to `true` if `num == 0`
+- Sets `underflow` to `true` if `num < 0`
+- All flags are set to `false` if the corresponding condition is not met
+
+## Instruction Set
+
+The CPU supports a wide range of instructions organized into categories:
+
+- **Data Movement** (0x00-0x04): MOV operations
+- **Bitwise Logic** (0x10-0x12): NOT, AND operations
+- **Control Flow** (0x20-0x2F): JMP, CMP, conditional jumps (JZ, JNZ, JU, JNU, JO, JNO)
+- **Stack Operations** (0x30-0x32): PUSH, POP
+- **Arithmetic** (0x40-0x4F): ADD, SUB, INC, DEC, MUL, DIV, PWR, SQRT, FSQRT, MOD
+- **Subroutines** (0x50-0x52): CALL, RET
+- **Memory Access** (0x60-0x63): STORE operations
+- **Halt** (0xFD-0xFF): HALT with various exit code options
+
+See the full instruction reference for detailed opcode documentation.
+
+## Example Usage
+
+```cpp
+#include "cpu.h"
+
+int main() {
+    CPU cpu;
+    
+    // Load a simple program: MOV $0, #42; HALT
+    cpu.ram.memory[0x0000] = 0x02; // MOV $x, #immediate
+    cpu.ram.memory[0x0001] = 0x00; // Register 0
+    cpu.ram.memory[0x0002] = 42;   // Immediate value
+    cpu.ram.memory[0x0003] = 0xFF; // HALT
+    
+    // Run the program
+    int exit_code = cpu.run();
+    
+    // Check register value
+    // Note: registers is private, but you can access it through memory operations
+    
+    return exit_code;
+}
+```
