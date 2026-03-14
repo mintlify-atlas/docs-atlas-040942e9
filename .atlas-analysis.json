@@ -1,0 +1,90 @@
+{
+  "projectType": "general",
+  "projectName": "Neodymium VM",
+  "projectDescription": "An open-source 8-bit virtual machine with CPU, RAM, stack, and display capabilities.",
+  "theme": "aspen",
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/cpu",
+              "architecture/memory",
+              "architecture/stack",
+              "architecture/display"
+            ]
+          },
+          {
+            "group": "Programming Guide",
+            "pages": [
+              "programming/instruction-set",
+              "programming/registers",
+              "programming/memory-layout",
+              "programming/examples"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/opcodes",
+              "reference/flags",
+              "reference/error-codes"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Components",
+            "pages": [
+              "api/cpu",
+              "api/ram",
+              "api/stack",
+              "api/screen"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "8-bit CPU with 8 general-purpose registers",
+    "64KB addressable RAM",
+    "256-byte stack",
+    "16x16 pixel display output",
+    "50+ instruction opcodes",
+    "Flag system (zero, overflow, underflow)",
+    "UNIX-based execution",
+    "Binary program loading"
+  ],
+  "publicApiSurface": [
+    "MOV - Data movement instructions",
+    "ADD, SUB, MUL, DIV - Arithmetic operations",
+    "AND, NOT - Logical operations",
+    "JMP, JZ, JNZ, JU, JO - Jump instructions",
+    "PUSH, POP - Stack operations",
+    "CALL, RET - Subroutine calls",
+    "STORE - Memory write operations",
+    "CMP - Comparison instruction",
+    "HALT - Program termination",
+    "INC, DEC - Increment/decrement",
+    "PWR, SQRT, FSQRT, MOD - Math operations"
+  ]
+}
